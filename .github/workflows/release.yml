@@ -1,52 +1,30 @@
 name: Release
 
+# M1.1-#002 (2026-04-12): triggered by semver tags pushed from the GitLab
+# source-of-truth repo via .gitlab-ci.yml's publish-github-mirror-tag job.
+# Each matrix job runs electron-builder with `--publish always`, which lets
+# electron-builder upload artifacts directly to the GitHub Release using
+# GITHUB_TOKEN (exposed to the binary as GH_TOKEN). No softprops step needed
+# because electron-builder creates/updates the draft Release itself.
+#
+# The `publish: github` block in electron-builder.yml drives this. See
+# docs/DECISIONS_M1.md §5 and the comment block in electron-builder.yml.
 on:
   push:
-    branches:
-      - release
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: release
-  cancel-in-progress: true
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  prepare:
-    name: Prepare Release
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
-      tag_exists: ${{ steps.check.outputs.exists }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Read version from package.json
-        id: version
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Release version: v$VERSION"
-
-      - name: Check if tag already exists
-        id: check
-        run: |
-          if git ls-remote --tags origin "refs/tags/v${{ steps.version.outputs.version }}" | grep -q .; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag v${{ steps.version.outputs.version }} already exists — skipping."
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
-
   release_mac:
     name: Build macOS (${{ matrix.arch }})
-    needs: prepare
-    if: needs.prepare.outputs.tag_exists == 'false'
     runs-on: macos-latest
     strategy:
       matrix:
@@ -67,25 +45,14 @@ jobs:
       - name: Build app
         run: npm run build
 
-      - name: Package macOS artifacts
+      - name: Package and publish macOS artifacts
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: mac-${{ matrix.arch }}-artifacts
-          path: |
-            dist/*.dmg
-            dist/*.zip
-            dist/*.blockmap
-            dist/latest-mac.yml
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish always
 
   release_linux:
     name: Build Linux
-    needs: prepare
-    if: needs.prepare.outputs.tag_exists == 'false'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -103,22 +70,13 @@ jobs:
       - name: Build app
         run: npm run build
 
-      - name: Package Linux artifacts
-        run: npx electron-builder --linux AppImage deb --publish never
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-artifacts
-          path: |
-            dist/*.AppImage
-            dist/*.deb
-            dist/latest-linux.yml
+      - name: Package and publish Linux artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --linux AppImage deb --publish always
 
   release_win:
     name: Build Windows
-    needs: prepare
-    if: needs.prepare.outputs.tag_exists == 'false'
     runs-on: windows-latest
     steps:
       - name: Check out repository
@@ -136,61 +94,52 @@ jobs:
       - name: Build app
         run: npm run build
 
-      - name: Package Windows artifacts
+      # Two-step publish: package first (no upload), verify the native
+      # binary is Windows PE format, THEN publish. Catches the
+      # cross-build ABI regression that silently ships a Linux .node
+      # inside an NSIS installer BEFORE the installer reaches users.
+      # Reordered 2026-04-12 after code review caught that verification
+      # was running post-publish (M1.1 quick-wins review, blocker W2).
+      - name: Package Windows artifacts (no upload)
         env:
-          # M1 ships unsigned (Path A — see docs/DECISIONS_M1.md §4).
-          # When signing activates in M1.1, set WIN_CSC_LINK + WIN_CSC_KEY_PASSWORD
-          # as repo secrets and remove CSC_IDENTITY_AUTO_DISCOVERY.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx electron-builder --win nsis --publish never
 
-      - name: Verify better-sqlite3 is Windows binary
+      - name: Verify better-sqlite3 is a Windows PE binary
         shell: pwsh
         run: |
-          $nodeFile = Get-ChildItem -Recurse -Path dist -Filter "better_sqlite3.node" | Select-Object -First 1
-          if (-not $nodeFile) { throw "better_sqlite3.node not found in dist/" }
-          $bytes = [System.IO.File]::ReadAllBytes($nodeFile.FullName)[0..1]
-          if ($bytes[0] -eq 0x4D -and $bytes[1] -eq 0x5A) {
-            Write-Host "OK: better_sqlite3.node is PE (Windows DLL format)"
-          } else {
-            throw "FAIL: better_sqlite3.node has wrong magic bytes. Got 0x$($bytes[0].ToString('X2'))$($bytes[1].ToString('X2')), expected 0x4D5A (PE/MZ)."
+          $candidates = Get-ChildItem -Recurse -Path dist -Filter "better_sqlite3.node" |
+            Where-Object { $_.FullName -match 'app\.asar\.unpacked|win-unpacked' }
+          if (-not $candidates) {
+            throw "better_sqlite3.node not found under dist\win-unpacked or app.asar.unpacked"
+          }
+          if ($candidates.Count -gt 1) {
+            Write-Warning "Multiple candidates found, verifying ALL of them"
+          }
+          foreach ($nodeFile in $candidates) {
+            $bytes = [System.IO.File]::ReadAllBytes($nodeFile.FullName)[0..1]
+            if ($bytes[0] -eq 0x4D -and $bytes[1] -eq 0x5A) {
+              Write-Host "OK: $($nodeFile.FullName) is PE (Windows DLL format)"
+            } else {
+              throw "FAIL: $($nodeFile.FullName) has wrong magic bytes. Got 0x$($bytes[0].ToString('X2'))$($bytes[1].ToString('X2')), expected 0x4D5A (PE/MZ)."
+            }
           }
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: win-artifacts
-          path: |
-            dist/*.exe
-            dist/*.exe.blockmap
-            dist/latest.yml
-
-  publish:
-    name: Publish Release
-    needs: [prepare, release_mac, release_linux, release_win]
-    if: needs.prepare.outputs.tag_exists == 'false'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Create tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag ${{ needs.prepare.outputs.tag }}
-          git push origin ${{ needs.prepare.outputs.tag }}
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.prepare.outputs.tag }}
-          name: Pan Desktop ${{ needs.prepare.outputs.tag }}
-          generate_release_notes: true
-          files: artifacts/*
+      - name: Publish Windows artifacts to GitHub Release
+        env:
+          # M1 ships unsigned (Path A — see docs/DECISIONS_M1.md §4, M1.1-#001
+          # closed as won't-fix 2026-04-12). NsisUpdater will trigger a UAC
+          # prompt on every auto-update because it cannot silently apply
+          # unsigned updates. Documented for users in README.md. When signing
+          # activates post-M1, set WIN_CSC_LINK + WIN_CSC_KEY_PASSWORD as repo
+          # secrets and remove CSC_IDENTITY_AUTO_DISCOVERY.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # GITHUB_TOKEN has write access to releases because `permissions:
+          # contents: write` is set at the workflow level — no extra PAT
+          # required. electron-builder reads GH_TOKEN to upload artifacts
+          # (and blockmaps + latest.yml) to the GitHub Release.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # electron-builder is idempotent for an already-packaged tree:
+        # it detects the dist/win-unpacked already exists and only does
+        # the publish step when called a second time with --publish always.
+        run: npx electron-builder --win nsis --publish always
