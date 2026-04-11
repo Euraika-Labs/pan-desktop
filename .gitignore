@@ -10,6 +10,9 @@ out/
 # TypeScript incremental build info
 *.tsbuildinfo
 
+# ESLint cache
+.eslintcache
+
 # Logs
 npm-debug.log*
 yarn-debug.log*
@@ -24,3 +27,6 @@ pnpm-debug.log*
 # Electron packaging artifacts
 release/
 .claude/worktrees
+
+# Orchestrator session state
+.claude-octopus/

@@ -1,14 +1,7 @@
-import { execFileSync } from "child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
-import { homedir } from "os";
-import {
-  HERMES_HOME,
-  HERMES_PYTHON,
-  HERMES_SCRIPT,
-  HERMES_REPO,
-  getEnhancedPath,
-} from "./installer";
+import { runtime, processRunner } from "./runtime/instance";
+import { buildHermesEnv } from "./installer";
 import { profileHome } from "./utils";
 
 export interface InstalledSkill {
@@ -131,57 +124,73 @@ export function getSkillContent(skillPath: string): string {
 }
 
 /**
- * Search the skill registry via the hermes CLI.
+ * Run a `hermes skills <cmd>` via processRunner. Shared by searchSkills,
+ * installSkill, uninstallSkill.
  */
-export function searchSkills(query: string): SkillSearchResult[] {
+async function runSkillsCommand(
+  args: string[],
+  timeoutMs: number,
+): Promise<{ success: boolean; output: string; error?: string }> {
   try {
-    const output = execFileSync(
-      HERMES_PYTHON,
-      [HERMES_SCRIPT, "skills", "browse", "--query", query, "--json"],
+    const cmd = runtime.buildCliCmd();
+    const result = await processRunner.run(
+      cmd.command,
+      [...cmd.args, ...args],
       {
-        cwd: HERMES_REPO,
-        env: {
-          ...process.env,
-          PATH: getEnhancedPath(),
-          HOME: homedir(),
-          HERMES_HOME,
-        },
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: 30000,
+        cwd: runtime.hermesRepo,
+        env: buildHermesEnv(),
+        timeoutMs,
       },
     );
-
-    const text = output.toString().trim();
-    if (!text) return [];
-
-    // Try to parse JSON output
-    try {
-      const results = JSON.parse(text);
-      if (Array.isArray(results)) {
-        return results.map((r: Record<string, string>) => ({
-          name: r.name || "",
-          description: r.description || "",
-          category: r.category || "",
-          source: r.source || "",
-          installed: false,
-        }));
-      }
-    } catch {
-      // If JSON parsing fails, the CLI may not support --json flag
-      // Fall back to listing bundled skills that match
-    }
-
-    return [];
-  } catch {
-    return [];
+    return { success: true, output: result.stdout };
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; message?: string };
+    return {
+      success: false,
+      output: e.stdout ?? "",
+      error: (e.stderr ?? e.message ?? "").trim(),
+    };
   }
+}
+
+/**
+ * Search the skill registry via the hermes CLI.
+ */
+export async function searchSkills(
+  query: string,
+): Promise<SkillSearchResult[]> {
+  const result = await runSkillsCommand(
+    ["skills", "browse", "--query", query, "--json"],
+    30000,
+  );
+  if (!result.success) return [];
+
+  const text = result.output.trim();
+  if (!text) return [];
+
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      return parsed.map((r: Record<string, string>) => ({
+        name: r.name || "",
+        description: r.description || "",
+        category: r.category || "",
+        source: r.source || "",
+        installed: false,
+      }));
+    }
+  } catch {
+    // If JSON parsing fails, the CLI may not support --json flag
+  }
+
+  return [];
 }
 
 /**
  * List bundled skills from the hermes-agent repo.
  */
 export function listBundledSkills(): SkillSearchResult[] {
-  const bundledDir = join(HERMES_REPO, "skills");
+  const bundledDir = join(runtime.hermesRepo, "skills");
   if (!existsSync(bundledDir)) return [];
 
   const skills: SkillSearchResult[] = [];
@@ -233,60 +242,28 @@ export function listBundledSkills(): SkillSearchResult[] {
   );
 }
 
-export function installSkill(
+export async function installSkill(
   identifier: string,
   profile?: string,
-): { success: boolean; error?: string } {
-  try {
-    const args = [HERMES_SCRIPT, "skills", "install", identifier, "--yes"];
-    if (profile && profile !== "default") {
-      args.splice(1, 0, "-p", profile);
-    }
-
-    execFileSync(HERMES_PYTHON, args, {
-      cwd: HERMES_REPO,
-      env: {
-        ...process.env,
-        PATH: getEnhancedPath(),
-        HOME: homedir(),
-        HERMES_HOME,
-      },
-      stdio: "pipe",
-      timeout: 60000,
-    });
-    return { success: true };
-  } catch (err) {
-    const msg =
-      (err as { stderr?: Buffer }).stderr?.toString() || (err as Error).message;
-    return { success: false, error: msg.trim() };
+): Promise<{ success: boolean; error?: string }> {
+  const args: string[] = [];
+  if (profile && profile !== "default") {
+    args.push("-p", profile);
   }
+  args.push("skills", "install", identifier, "--yes");
+  const result = await runSkillsCommand(args, 60000);
+  return { success: result.success, error: result.error };
 }
 
-export function uninstallSkill(
+export async function uninstallSkill(
   name: string,
   profile?: string,
-): { success: boolean; error?: string } {
-  try {
-    const args = [HERMES_SCRIPT, "skills", "uninstall", name, "--yes"];
-    if (profile && profile !== "default") {
-      args.splice(1, 0, "-p", profile);
-    }
-
-    execFileSync(HERMES_PYTHON, args, {
-      cwd: HERMES_REPO,
-      env: {
-        ...process.env,
-        PATH: getEnhancedPath(),
-        HOME: homedir(),
-        HERMES_HOME,
-      },
-      stdio: "pipe",
-      timeout: 30000,
-    });
-    return { success: true };
-  } catch (err) {
-    const msg =
-      (err as { stderr?: Buffer }).stderr?.toString() || (err as Error).message;
-    return { success: false, error: msg.trim() };
+): Promise<{ success: boolean; error?: string }> {
+  const args: string[] = [];
+  if (profile && profile !== "default") {
+    args.push("-p", profile);
   }
+  args.push("skills", "uninstall", name, "--yes");
+  const result = await runSkillsCommand(args, 30000);
+  return { success: result.success, error: result.error };
 }

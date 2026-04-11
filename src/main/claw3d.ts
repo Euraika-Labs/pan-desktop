@@ -1,25 +1,35 @@
-import { spawn, ChildProcess, execSync } from "child_process";
-import {
-  existsSync,
-  readFileSync,
-  unlinkSync,
-  mkdirSync,
-} from "fs";
+import { existsSync, readFileSync, unlinkSync, mkdirSync } from "fs";
 import { join } from "path";
-import { homedir } from "os";
 import { createConnection } from "net";
-import { getEnhancedPath, HERMES_HOME } from "./installer";
+import {
+  adapter,
+  runtime,
+  processRunner,
+  getDesktop,
+} from "./runtime/instance";
+import type { ChildProcess } from "./platform/processRunner";
+import { buildHermesEnv } from "./installer";
 import { stripAnsi, safeWriteFile } from "./utils";
 
 const HERMES_OFFICE_REPO = "https://github.com/fathah/hermes-office";
-const HERMES_OFFICE_DIR = join(HERMES_HOME, "hermes-office");
-const DEV_PID_FILE = join(HERMES_HOME, "claw3d-dev.pid");
-const ADAPTER_PID_FILE = join(HERMES_HOME, "claw3d-adapter.pid");
-const PORT_FILE = join(HERMES_HOME, "claw3d-port");
-const WS_URL_FILE = join(HERMES_HOME, "claw3d-ws-url");
+const HERMES_OFFICE_DIR = join(runtime.hermesHome, "hermes-office");
+const DEV_PID_FILE = join(runtime.hermesHome, "claw3d-dev.pid");
+const ADAPTER_PID_FILE = join(runtime.hermesHome, "claw3d-adapter.pid");
+const PORT_FILE = join(runtime.hermesHome, "claw3d-port");
+const WS_URL_FILE = join(runtime.hermesHome, "claw3d-ws-url");
 const DEFAULT_PORT = 3000;
 const DEFAULT_WS_URL = "ws://localhost:18789";
-const CLAW3D_SETTINGS_DIR = join(homedir(), ".openclaw", "claw3d");
+
+/**
+ * Where Claw3D stores its own onboarding settings. In Wave 1 we moved this
+ * off the hardcoded `~/.openclaw/claw3d` (which was the pre-rebrand path)
+ * onto desktopPaths.claw3dSettings, which resolves to
+ * `%APPDATA%\Pan Desktop\claw3d` on Windows (or equivalents on macOS/Linux)
+ * with a legacy fallback for users still on the old location.
+ */
+function claw3dSettingsDir(): string {
+  return getDesktop().claw3dSettings;
+}
 
 let devServerProcess: ChildProcess | null = null;
 let adapterProcess: ChildProcess | null = null;
@@ -67,16 +77,16 @@ export function getClaw3dWsUrl(): string {
 }
 
 /**
- * Write Claw3D settings to ~/.openclaw/claw3d/settings.json
+ * Write Claw3D settings to desktopPaths.claw3dSettings/settings.json
  * and .env in the claw3d directory so onboarding is skipped.
  */
 function writeClaw3dSettings(wsUrl?: string): void {
   const url = wsUrl || getSavedWsUrl();
 
-  // Write ~/.openclaw/claw3d/settings.json
   try {
-    mkdirSync(CLAW3D_SETTINGS_DIR, { recursive: true });
-    const settingsPath = join(CLAW3D_SETTINGS_DIR, "settings.json");
+    const settingsDir = claw3dSettingsDir();
+    mkdirSync(settingsDir, { recursive: true });
+    const settingsPath = join(settingsDir, "settings.json");
 
     // Preserve existing settings if present
     let existing: Record<string, unknown> = {};
@@ -160,15 +170,6 @@ export interface Claw3dSetupProgress {
   log: string;
 }
 
-function isProcessRunning(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function readPid(file: string): number | null {
   try {
     const pid = parseInt(readFileSync(file, "utf-8").trim(), 10);
@@ -193,7 +194,7 @@ function cleanupPid(file: string): void {
 function isDevServerRunning(): boolean {
   if (devServerProcess && !devServerProcess.killed) return true;
   const pid = readPid(DEV_PID_FILE);
-  if (pid && isProcessRunning(pid)) return true;
+  if (pid && processRunner.isProcessAlive(pid)) return true;
   cleanupPid(DEV_PID_FILE);
   return false;
 }
@@ -201,7 +202,7 @@ function isDevServerRunning(): boolean {
 function isAdapterRunning(): boolean {
   if (adapterProcess && !adapterProcess.killed) return true;
   const pid = readPid(ADAPTER_PID_FILE);
-  if (pid && isProcessRunning(pid)) return true;
+  if (pid && processRunner.isProcessAlive(pid)) return true;
   cleanupPid(ADAPTER_PID_FILE);
   return false;
 }
@@ -230,37 +231,17 @@ export async function getClaw3dStatus(): Promise<Claw3dStatus> {
 
 let _cachedNpmPath: string | null = null;
 
-function findNpm(): string {
+/**
+ * Resolve the npm binary via processRunner.findExecutable, which handles
+ * Windows `npm.cmd`/`.bat` extensions, the adapter's systemPathExtras,
+ * and the current PATH uniformly across platforms. No shell, no
+ * `which/where` string. Caches the result for the process lifetime.
+ */
+async function findNpm(): Promise<string> {
   if (_cachedNpmPath) return _cachedNpmPath;
-
-  // Try common locations first (no process spawn)
-  const candidates = ["/usr/local/bin/npm", "/opt/homebrew/bin/npm"];
-  for (const c of candidates) {
-    if (existsSync(c)) {
-      _cachedNpmPath = c;
-      return c;
-    }
-  }
-
-  // Fallback: which/where (blocks main thread — only runs once)
-  try {
-    const npmPath = execSync("which npm 2>/dev/null || where npm 2>/dev/null", {
-      env: { ...process.env, PATH: getEnhancedPath() },
-      timeout: 5000,
-    })
-      .toString()
-      .trim()
-      .split("\n")[0];
-    if (npmPath && existsSync(npmPath)) {
-      _cachedNpmPath = npmPath;
-      return npmPath;
-    }
-  } catch {
-    /* fall through */
-  }
-
-  _cachedNpmPath = "npm";
-  return "npm";
+  const found = await processRunner.findExecutable("npm");
+  _cachedNpmPath = found ?? "npm";
+  return _cachedNpmPath;
 }
 
 export async function setupClaw3d(
@@ -280,12 +261,7 @@ export async function setupClaw3d(
     });
   }
 
-  const env = {
-    ...process.env,
-    PATH: getEnhancedPath(),
-    HOME: homedir(),
-    TERM: "dumb",
-  };
+  const env = buildHermesEnv({ TERM: "dumb" });
 
   // Step 1: Clone (or pull if already cloned)
   const cloned = existsSync(join(HERMES_OFFICE_DIR, "package.json"));
@@ -293,22 +269,18 @@ export async function setupClaw3d(
   if (!cloned) {
     emit(1, "Cloning Claw3D repository...", "Cloning from GitHub...\n");
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn(
+      const proc = processRunner.spawnStreaming(
         "git",
         ["clone", HERMES_OFFICE_REPO, HERMES_OFFICE_DIR],
         {
-          cwd: homedir(),
+          cwd: adapter.homeDir(),
           env,
-          stdio: ["ignore", "pipe", "pipe"],
+          onStdout: (text) =>
+            emit(1, "Cloning Claw3D repository...", stripAnsi(text)),
+          onStderr: (text) =>
+            emit(1, "Cloning Claw3D repository...", stripAnsi(text)),
         },
       );
-
-      proc.stdout?.on("data", (data: Buffer) => {
-        emit(1, "Cloning Claw3D repository...", stripAnsi(data.toString()));
-      });
-      proc.stderr?.on("data", (data: Buffer) => {
-        emit(1, "Cloning Claw3D repository...", stripAnsi(data.toString()));
-      });
 
       proc.on("close", (code) => {
         if (code === 0) {
@@ -329,43 +301,31 @@ export async function setupClaw3d(
       "Repository already exists, pulling latest...\n",
     );
     await new Promise<void>((resolve) => {
-      const proc = spawn("git", ["pull", "--ff-only"], {
+      const proc = processRunner.spawnStreaming("git", ["pull", "--ff-only"], {
         cwd: HERMES_OFFICE_DIR,
         env,
-        stdio: ["ignore", "pipe", "pipe"],
+        onStdout: (text) => emit(1, "Updating Claw3D...", stripAnsi(text)),
+        onStderr: (text) => emit(1, "Updating Claw3D...", stripAnsi(text)),
       });
 
-      proc.stdout?.on("data", (data: Buffer) => {
-        emit(1, "Updating Claw3D...", stripAnsi(data.toString()));
-      });
-      proc.stderr?.on("data", (data: Buffer) => {
-        emit(1, "Updating Claw3D...", stripAnsi(data.toString()));
-      });
-
-      proc.on("close", (code) => {
-        if (code === 0) resolve();
-        else resolve(); // non-fatal: pull failures shouldn't block setup
-      });
+      proc.on("close", () => resolve());
+      // non-fatal: pull failures shouldn't block setup
       proc.on("error", () => resolve());
     });
   }
 
   // Step 2: npm install
   emit(2, "Installing dependencies...", "Running npm install...\n");
-  const npm = findNpm();
+  const npm = await findNpm();
 
   await new Promise<void>((resolve, reject) => {
-    const proc = spawn(npm, ["install"], {
+    const proc = processRunner.spawnStreaming(npm, ["install"], {
       cwd: HERMES_OFFICE_DIR,
       env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    proc.stdout?.on("data", (data: Buffer) => {
-      emit(2, "Installing dependencies...", stripAnsi(data.toString()));
-    });
-    proc.stderr?.on("data", (data: Buffer) => {
-      emit(2, "Installing dependencies...", stripAnsi(data.toString()));
+      onStdout: (text) =>
+        emit(2, "Installing dependencies...", stripAnsi(text)),
+      onStderr: (text) =>
+        emit(2, "Installing dependencies...", stripAnsi(text)),
     });
 
     proc.on("close", (code) => {
@@ -389,70 +349,42 @@ export async function setupClaw3d(
   writeClaw3dSettings();
 }
 
-function killProcessTree(proc: ChildProcess): void {
-  if (proc.pid) {
-    try {
-      process.kill(-proc.pid, "SIGTERM");
-    } catch {
-      try {
-        proc.kill("SIGTERM");
-      } catch {
-        /* already dead */
-      }
-    }
-    // Fallback: SIGKILL after 3 seconds
-    setTimeout(() => {
-      try {
-        if (proc.pid) process.kill(-proc.pid, "SIGKILL");
-      } catch {
-        /* already dead */
-      }
-    }, 3000);
-  }
-}
-
-export function startDevServer(): boolean {
+export async function startDevServer(): Promise<boolean> {
   if (isDevServerRunning()) return true;
   if (!existsSync(join(HERMES_OFFICE_DIR, "node_modules"))) return false;
 
   devServerError = "";
   devServerLogs = "";
   const port = getSavedPort();
-  const npm = findNpm();
-  const proc = spawn(npm, ["run", "dev"], {
+  const npm = await findNpm();
+
+  const proc = processRunner.spawnStreaming(npm, ["run", "dev"], {
     cwd: HERMES_OFFICE_DIR,
-    env: {
-      ...process.env,
-      PATH: getEnhancedPath(),
-      HOME: homedir(),
-      TERM: "dumb",
-      PORT: String(port),
-    },
-    stdio: ["ignore", "pipe", "pipe"],
+    env: buildHermesEnv({ TERM: "dumb", PORT: String(port) }),
+    // Detached because the Claw3D dev server is long-lived and should
+    // survive desktop-app restarts. killTree cleans it up on explicit stop.
     detached: true,
+    onStdout: (text) => {
+      devServerLogs += stripAnsi(text);
+      if (devServerLogs.length > 2000)
+        devServerLogs = devServerLogs.slice(-2000);
+    },
+    onStderr: (raw) => {
+      const text = stripAnsi(raw);
+      devServerLogs += text;
+      if (devServerLogs.length > 2000)
+        devServerLogs = devServerLogs.slice(-2000);
+      if (
+        /error|EADDRINUSE|ENOENT|failed|fatal/i.test(text) &&
+        !/warning/i.test(text)
+      ) {
+        devServerError = text.trim().slice(0, 300);
+      }
+    },
   });
 
   devServerProcess = proc;
   if (proc.pid) writePid(DEV_PID_FILE, proc.pid);
-
-  proc.stdout?.on("data", (data: Buffer) => {
-    devServerLogs += stripAnsi(data.toString());
-    // Keep only last 2000 chars
-    if (devServerLogs.length > 2000) devServerLogs = devServerLogs.slice(-2000);
-  });
-
-  proc.stderr?.on("data", (data: Buffer) => {
-    const text = stripAnsi(data.toString());
-    devServerLogs += text;
-    if (devServerLogs.length > 2000) devServerLogs = devServerLogs.slice(-2000);
-    // Capture real errors (not warnings)
-    if (
-      /error|EADDRINUSE|ENOENT|failed|fatal/i.test(text) &&
-      !/warning/i.test(text)
-    ) {
-      devServerError = text.trim().slice(0, 300);
-    }
-  });
 
   proc.on("close", (code) => {
     if (code && code !== 0 && !devServerError) {
@@ -466,64 +398,66 @@ export function startDevServer(): boolean {
   return true;
 }
 
-export function stopDevServer(): void {
+export async function stopDevServer(): Promise<void> {
   if (devServerProcess) {
-    killProcessTree(devServerProcess);
+    await processRunner
+      .killTree(devServerProcess, { graceMs: 3000 })
+      .catch(() => {
+        /* already gone */
+      });
     devServerProcess = null;
   }
 
   const pid = readPid(DEV_PID_FILE);
   if (pid) {
-    try {
-      process.kill(-pid, "SIGTERM");
-    } catch {
-      try {
-        process.kill(pid, "SIGTERM");
-      } catch {
-        /* already dead */
-      }
-    }
+    await processRunner.killTree(pid, { graceMs: 3000 }).catch(() => {
+      /* already gone */
+    });
   }
   cleanupPid(DEV_PID_FILE);
 }
 
-export function startAdapter(): boolean {
+export async function startAdapter(): Promise<boolean> {
   if (isAdapterRunning()) return true;
   if (!existsSync(join(HERMES_OFFICE_DIR, "node_modules"))) return false;
 
   adapterError = "";
   adapterLogs = "";
-  const npm = findNpm();
-  const proc = spawn(npm, ["run", "hermes-adapter"], {
+  const npm = await findNpm();
+
+  const proc = processRunner.spawnStreaming(npm, ["run", "hermes-adapter"], {
     cwd: HERMES_OFFICE_DIR,
-    env: {
-      ...process.env,
-      PATH: getEnhancedPath(),
-      HOME: homedir(),
-      TERM: "dumb",
-    },
-    stdio: ["ignore", "pipe", "pipe"],
+    env: buildHermesEnv({ TERM: "dumb" }),
     detached: true,
+    onStdout: (text) => {
+      adapterLogs += stripAnsi(text);
+      if (adapterLogs.length > 2000) adapterLogs = adapterLogs.slice(-2000);
+    },
+    onStderr: (raw) => {
+      const text = stripAnsi(raw);
+      adapterLogs += text;
+      if (adapterLogs.length > 2000) adapterLogs = adapterLogs.slice(-2000);
+      if (
+        /error|EADDRINUSE|ENOENT|failed|fatal/i.test(text) &&
+        !/warning/i.test(text)
+      ) {
+        adapterError = text.trim().slice(0, 300);
+      }
+    },
   });
 
   adapterProcess = proc;
   if (proc.pid) writePid(ADAPTER_PID_FILE, proc.pid);
 
-  proc.stdout?.on("data", (data: Buffer) => {
-    adapterLogs += stripAnsi(data.toString());
-    if (adapterLogs.length > 2000) adapterLogs = adapterLogs.slice(-2000);
-  });
-
-  proc.stderr?.on("data", (data: Buffer) => {
-    const text = stripAnsi(data.toString());
-    adapterLogs += text;
-    if (adapterLogs.length > 2000) adapterLogs = adapterLogs.slice(-2000);
-    if (
-      /error|EADDRINUSE|ENOENT|failed|fatal/i.test(text) &&
-      !/warning/i.test(text)
-    ) {
-      adapterError = text.trim().slice(0, 300);
-    }
+  proc.on("error", (err) => {
+    // Fires when spawn itself fails (ENOENT, EINVAL on Windows .cmd
+    // without shell:true, permission errors, etc). Without this
+    // handler, the 'close' event still fires but reports a naked
+    // "exited with code 1" with no log capture because stdio was
+    // never wired up. Populate adapterError with the real reason so
+    // the UI can surface it instead of the generic "code 1".
+    adapterError = `Failed to start Hermes adapter: ${err.message}`;
+    adapterLogs += `[SPAWN ERROR] ${err.message}\n`;
   });
 
   proc.on("close", (code) => {
@@ -538,28 +472,29 @@ export function startAdapter(): boolean {
   return true;
 }
 
-export function stopAdapter(): void {
+export async function stopAdapter(): Promise<void> {
   if (adapterProcess) {
-    killProcessTree(adapterProcess);
+    await processRunner
+      .killTree(adapterProcess, { graceMs: 3000 })
+      .catch(() => {
+        /* already gone */
+      });
     adapterProcess = null;
   }
 
   const pid = readPid(ADAPTER_PID_FILE);
   if (pid) {
-    try {
-      process.kill(-pid, "SIGTERM");
-    } catch {
-      try {
-        process.kill(pid, "SIGTERM");
-      } catch {
-        /* already dead */
-      }
-    }
+    await processRunner.killTree(pid, { graceMs: 3000 }).catch(() => {
+      /* already gone */
+    });
   }
   cleanupPid(ADAPTER_PID_FILE);
 }
 
-export function startAll(): { success: boolean; error?: string } {
+export async function startAll(): Promise<{
+  success: boolean;
+  error?: string;
+}> {
   if (!existsSync(join(HERMES_OFFICE_DIR, "node_modules"))) {
     return {
       success: false,
@@ -570,7 +505,7 @@ export function startAll(): { success: boolean; error?: string } {
   const port = getSavedPort();
 
   // Start dev server
-  const devOk = startDevServer();
+  const devOk = await startDevServer();
   if (!devOk) {
     return {
       success: false,
@@ -579,7 +514,7 @@ export function startAll(): { success: boolean; error?: string } {
   }
 
   // Start adapter
-  const adapterOk = startAdapter();
+  const adapterOk = await startAdapter();
   if (!adapterOk) {
     return { success: false, error: "Failed to start Hermes adapter" };
   }
@@ -587,9 +522,9 @@ export function startAll(): { success: boolean; error?: string } {
   return { success: true };
 }
 
-export function stopAll(): void {
-  stopDevServer();
-  stopAdapter();
+export async function stopAll(): Promise<void> {
+  await stopDevServer();
+  await stopAdapter();
   devServerError = "";
   adapterError = "";
 }

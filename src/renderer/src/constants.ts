@@ -79,6 +79,21 @@ export const PROVIDERS = {
       baseUrl: "http://localhost:1234/v1",
       needsKey: false,
     },
+    {
+      id: "custom-openai",
+      name: "Custom OpenAI-compatible",
+      desc: "Your own API endpoint",
+      tag: "Advanced",
+      // OPENAI_API_KEY is the standard bearer-token env var for
+      // OpenAI-compatible APIs. The key field is OPTIONAL because
+      // some self-hosted endpoints don't require auth.
+      envKey: "OPENAI_API_KEY",
+      url: "",
+      placeholder: "sk-... (leave blank if no auth)",
+      configProvider: "custom",
+      baseUrl: "",
+      needsKey: false,
+    },
   ],
 };
 
@@ -323,7 +338,7 @@ export const GATEWAY_PLATFORMS: PlatformDef[] = [
   },
 ];
 
-// ── Install ─────────────────────────────────────────────
-
-export const INSTALL_CMD =
-  "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash";
+// Install command strings live in the main process (src/main/installer.ts
+// getInstallInstructions) and are fetched by the renderer via IPC. See
+// docs/ARCHITECTURE_OVERVIEW.md §Invariants #5 for why the renderer must
+// not author install/update command strings.

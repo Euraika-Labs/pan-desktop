@@ -96,15 +96,27 @@ function Install({ onComplete, onFailed }: InstallProps): React.JSX.Element {
         <div className="install-error-banner">
           <p className="install-error-text">{failed}</p>
           <div className="install-error-actions">
-            <button className="btn btn-primary btn-sm" onClick={() => {
-              setFailed(null);
-              setProgress({ step: 0, totalSteps: 7, title: "Preparing...", detail: "Starting installation", log: "" });
-              // Re-trigger install via parent
-              onFailed(failed);
-            }}>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => {
+                setFailed(null);
+                setProgress({
+                  step: 0,
+                  totalSteps: 7,
+                  title: "Preparing...",
+                  detail: "Starting installation",
+                  log: "",
+                });
+                // Re-trigger install via parent
+                onFailed(failed);
+              }}
+            >
               Retry Installation
             </button>
-            <button className="btn btn-secondary btn-sm" onClick={handleCopyLogs}>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={handleCopyLogs}
+            >
               <Copy size={13} />
               {copied ? "Copied!" : "Copy Logs"}
             </button>

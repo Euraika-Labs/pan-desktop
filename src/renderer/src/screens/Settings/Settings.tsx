@@ -20,7 +20,13 @@ function getCachedOpenClaw(): { found: boolean; path: string | null } | null {
   }
 }
 
-function Settings({ profile, visible }: { profile?: string; visible?: boolean }): React.JSX.Element {
+function Settings({
+  profile,
+  visible,
+}: {
+  profile?: string;
+  visible?: boolean;
+}): React.JSX.Element {
   const [env, setEnv] = useState<Record<string, string>>({});
   const [savedKey, setSavedKey] = useState<string | null>(null);
   const [hermesHome, setHermesHome] = useState("");
@@ -97,7 +103,9 @@ function Settings({ profile, visible }: { profile?: string; visible?: boolean })
       if (v) {
         try {
           localStorage.setItem("hermes-version-cache", v);
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
     });
 
@@ -107,7 +115,9 @@ function Settings({ profile, visible }: { profile?: string; visible?: boolean })
         setOpenclawPath(claw.path);
         try {
           localStorage.setItem("hermes-openclaw-cache", JSON.stringify(claw));
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       });
     }
   }, [profile]);
@@ -257,7 +267,11 @@ function Settings({ profile, visible }: { profile?: string; visible?: boolean })
     window.hermesAPI.refreshHermesVersion().then((v) => {
       setHermesVersion(v);
       if (v) {
-        try { localStorage.setItem("hermes-version-cache", v); } catch { /* ignore */ }
+        try {
+          localStorage.setItem("hermes-version-cache", v);
+        } catch {
+          /* ignore */
+        }
       }
     });
   }

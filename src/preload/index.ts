@@ -3,6 +3,13 @@ import { electronAPI } from "@electron-toolkit/preload";
 
 const hermesAPI = {
   // Installation
+  getInstallInstructions: (): Promise<{
+    supported: boolean;
+    heading: string;
+    body: string;
+    manualCommand?: string;
+  }> => ipcRenderer.invoke("get-install-instructions"),
+
   checkInstall: (): Promise<{
     installed: boolean;
     configured: boolean;
@@ -90,7 +97,13 @@ const hermesAPI = {
     resumeSessionId?: string,
     history?: Array<{ role: string; content: string }>,
   ): Promise<{ response: string; sessionId?: string }> =>
-    ipcRenderer.invoke("send-message", message, profile, resumeSessionId, history),
+    ipcRenderer.invoke(
+      "send-message",
+      message,
+      profile,
+      resumeSessionId,
+      history,
+    ),
 
   abortChat: (): Promise<void> => ipcRenderer.invoke("abort-chat"),
 
@@ -380,6 +393,12 @@ const hermesAPI = {
   updateModel: (id: string, fields: Record<string, string>): Promise<boolean> =>
     ipcRenderer.invoke("update-model", id, fields),
 
+  fetchRemoteModels: (
+    baseUrl: string,
+    apiKey: string | null,
+  ): Promise<{ ok: boolean; models: string[]; error?: string }> =>
+    ipcRenderer.invoke("fetch-remote-models", baseUrl, apiKey),
+
   // Claw3D
   claw3dStatus: (): Promise<{
     cloned: boolean;
@@ -518,7 +537,14 @@ const hermesAPI = {
     deliver?: string,
     profile?: string,
   ): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("create-cron-job", schedule, prompt, name, deliver, profile),
+    ipcRenderer.invoke(
+      "create-cron-job",
+      schedule,
+      prompt,
+      name,
+      deliver,
+      profile,
+    ),
 
   removeCronJob: (
     jobId: string,

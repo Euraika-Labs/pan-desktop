@@ -15,8 +15,16 @@ interface InstallProgress {
   log: string;
 }
 
+interface InstallInstructions {
+  supported: boolean;
+  heading: string;
+  body: string;
+  manualCommand?: string;
+}
+
 interface HermesAPI {
   // Installation
+  getInstallInstructions: () => Promise<InstallInstructions>;
   checkInstall: () => Promise<InstallStatus>;
   startInstall: () => Promise<{ success: boolean; error?: string }>;
   onInstallProgress: (
@@ -272,6 +280,10 @@ interface HermesAPI {
   }>;
   removeModel: (id: string) => Promise<boolean>;
   updateModel: (id: string, fields: Record<string, string>) => Promise<boolean>;
+  fetchRemoteModels: (
+    baseUrl: string,
+    apiKey: string | null,
+  ) => Promise<{ ok: boolean; models: string[]; error?: string }>;
 
   // Claw3D
   claw3dStatus: () => Promise<{
@@ -353,10 +365,22 @@ interface HermesAPI {
     deliver?: string,
     profile?: string,
   ) => Promise<{ success: boolean; error?: string }>;
-  removeCronJob: (jobId: string, profile?: string) => Promise<{ success: boolean; error?: string }>;
-  pauseCronJob: (jobId: string, profile?: string) => Promise<{ success: boolean; error?: string }>;
-  resumeCronJob: (jobId: string, profile?: string) => Promise<{ success: boolean; error?: string }>;
-  triggerCronJob: (jobId: string, profile?: string) => Promise<{ success: boolean; error?: string }>;
+  removeCronJob: (
+    jobId: string,
+    profile?: string,
+  ) => Promise<{ success: boolean; error?: string }>;
+  pauseCronJob: (
+    jobId: string,
+    profile?: string,
+  ) => Promise<{ success: boolean; error?: string }>;
+  resumeCronJob: (
+    jobId: string,
+    profile?: string,
+  ) => Promise<{ success: boolean; error?: string }>;
+  triggerCronJob: (
+    jobId: string,
+    profile?: string,
+  ) => Promise<{ success: boolean; error?: string }>;
 
   // Shell
   openExternal: (url: string) => Promise<void>;

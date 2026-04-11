@@ -35,6 +35,7 @@ See `README.md` for platform-specific prerequisites, especially the Windows tool
 ## Making changes
 
 1. Create a feature branch from `develop`:
+
    ```bash
    git checkout -b feature/my-feature develop
    ```
@@ -49,6 +50,7 @@ See `README.md` for platform-specific prerequisites, especially the Windows tool
 2. Make your changes. Keep commits focused — one logical change per commit.
 
 3. Run checks before submitting:
+
    ```bash
    npm run lint
    npm run typecheck
@@ -73,6 +75,7 @@ Violating these requires an explicit reversal in `docs/DECISION_LOG.md`. If you 
 ## IPC namespacing
 
 New IPC handlers should use namespaced names:
+
 - `runtime:*` for runtime services (paths, installer, update, probe)
 - `platform:*` for platform services (process runner, executable lookup)
 - `desktop:*` for desktop-owned services (sessions, cache, claw3d settings)

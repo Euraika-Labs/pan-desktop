@@ -1,17 +1,56 @@
-import { spawn, execSync, execFile } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { homedir } from "os";
 import { getModelConfig } from "./config";
 import { stripAnsi } from "./utils";
+import {
+  adapter,
+  runtime,
+  processRunner,
+  buildHermesEnv,
+  getRuntimeInstaller,
+  getRuntimeUpdate,
+  refreshRuntimeState,
+} from "./runtime/instance";
 
-export const HERMES_HOME = join(homedir(), ".hermes");
-export const HERMES_REPO = join(HERMES_HOME, "hermes-agent");
-export const HERMES_VENV = join(HERMES_REPO, "venv");
-export const HERMES_PYTHON = join(HERMES_VENV, "bin", "python");
-export const HERMES_SCRIPT = join(HERMES_REPO, "hermes");
-export const HERMES_ENV_FILE = join(HERMES_HOME, ".env");
-export const HERMES_CONFIG_FILE = join(HERMES_HOME, "config.yaml");
+/**
+ * Wave 1 → 2 → 3 → 4 refactor (2026-04-11):
+ *
+ * This module used to be the choke point for the Unix-only assumptions in
+ * Pan Desktop — hardcoded `~/.hermes`, `venv/bin/python`, `spawn("bash")`,
+ * `curl|bash`, `.bashrc/.zshrc` sourcing, PATH joined with `:`.
+ *
+ * Waves 1–3 moved OS/runtime concerns into:
+ *   - platformAdapter (OS detection, path separator, shell profiles, etc.)
+ *   - runtimePaths (Hermes Agent paths, platform-aware venv layout)
+ *   - processRunner (subprocess execution + tree-kill + findExecutable)
+ *   - desktopPaths (Electron userData / logs)
+ *
+ * Wave 4 extracted the install/update/doctor STRATEGY layer into:
+ *   - runtime/runtimeInstaller.ts (Unix + Windows strategies)
+ *   - runtime/runtimeUpdate.ts (update service + version cache)
+ *   - runtime/runtimeManifest.ts (compatibility contract)
+ *
+ * What's left in this file:
+ *   - `checkInstallStatus()` — composite status (installed/configured/
+ *     hasApiKey/verified) used by the Welcome IPC handler
+ *   - `getInstallInstructions()` — platform-aware UX copy for the Welcome
+ *     screen
+ *   - `runInstall()` / `runHermesUpdate()` / `runHermesDoctor()` — thin
+ *     facades that delegate to the Wave 4 services. Kept as named exports
+ *     because the IPC handler surface in index.ts is stable.
+ *   - `checkOpenClawExists()` / `runClawMigrate()` — OpenClaw migration
+ *     helpers, unrelated to the core install/update strategy
+ *   - Re-exports of `buildHermesEnv` and `getEnhancedPath` for the 5 files
+ *     that still import them directly (migration to instance.ts imports is
+ *     a cleanup task scheduled for M1.1).
+ *
+ * See docs/DECISIONS_M1.md §5 and docs/ARCHITECTURE_OVERVIEW.md §Invariants.
+ */
+
+// Re-export for backward compatibility with the 5 files still importing
+// these names from "./installer". They can switch to "./runtime/instance"
+// in a follow-up cleanup.
+export { buildHermesEnv };
 
 export interface InstallStatus {
   installed: boolean;
@@ -20,45 +59,93 @@ export interface InstallStatus {
   verified: boolean;
 }
 
-export interface InstallProgress {
-  step: number;
-  totalSteps: number;
-  title: string;
-  detail: string;
-  log: string;
+// Re-export Wave 4 types under the names the IPC layer has always used.
+export type { InstallProgress } from "./runtime/runtimeInstaller";
+export type { UpdateProgress } from "./runtime/runtimeUpdate";
+import type { InstallProgress } from "./runtime/runtimeInstaller";
+import type { UpdateProgress } from "./runtime/runtimeUpdate";
+
+/**
+ * Install instructions returned to the renderer for display in the Welcome
+ * screen. Renderer never authors these strings — it fetches them from the
+ * main process so the install command lives in exactly one place
+ * (this file).
+ *
+ * See docs/ARCHITECTURE_OVERVIEW.md §Invariants #5:
+ * "No install/update command strings in src/renderer/".
+ */
+export interface InstallInstructions {
+  /** Whether automatic install via Pan Desktop's installer button is supported. */
+  supported: boolean;
+  /** Human-readable heading to show in the Welcome UI. */
+  heading: string;
+  /** Prose explaining what the user should do. */
+  body: string;
+  /**
+   * Shell command the user can run manually as a fallback. Undefined on
+   * platforms where no single-command install is available (e.g. Windows).
+   */
+  manualCommand?: string;
 }
 
+/**
+ * Return platform-appropriate install instructions for the renderer's
+ * Welcome screen. Called via IPC — never import this from the renderer.
+ */
+export async function getInstallInstructions(): Promise<InstallInstructions> {
+  if (adapter.platform === "windows") {
+    // Wave 5: always supported on Windows. Pan Desktop ships a vendored
+    // install.ps1 and runs it via PowerShell, which is guaranteed to be
+    // present on every supported Windows version. There are no manual
+    // prerequisites — `uv` handles its own Python runtime — so we do not
+    // surface a manualCommand either.
+    return {
+      supported: true,
+      heading: "Install Hermes Agent on Windows",
+      body:
+        "Pan Desktop will install Hermes Agent (~2 GB including a managed " +
+        "Python runtime) in a few minutes. No prerequisites needed — the " +
+        "installer downloads everything.",
+    };
+  }
+  return {
+    supported: true,
+    heading: "Install Hermes Agent",
+    body:
+      "Pan Desktop can install Hermes Agent for you. If you prefer to run " +
+      "the install script yourself in a terminal, copy the command below.",
+    manualCommand:
+      "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash",
+  };
+}
+
+/**
+ * getEnhancedPath returns the PATH env value that Hermes subprocesses
+ * should inherit — includes the venv bin/Scripts dir and the platform
+ * adapter's common user-install locations. Kept as a named export for
+ * callers that still reach for it by name; new code should use
+ * `buildHermesEnv()` which composes this automatically.
+ */
 export function getEnhancedPath(): string {
-  const home = homedir();
-  const extra = [
-    join(home, ".local", "bin"),
-    join(home, ".cargo", "bin"),
-    join(HERMES_VENV, "bin"),
-    "/usr/local/bin",
-    "/opt/homebrew/bin",
-    "/opt/homebrew/sbin",
-  ];
-  return [...extra, process.env.PATH || ""].join(":");
+  const extras = [runtime.venvBinDir, ...adapter.systemPathExtras()];
+  return adapter.buildEnhancedPath(extras);
 }
 
-export function checkInstallStatus(): InstallStatus {
-  const installed = existsSync(HERMES_PYTHON) && existsSync(HERMES_SCRIPT);
-  const configured = existsSync(HERMES_ENV_FILE);
+export async function checkInstallStatus(): Promise<InstallStatus> {
+  refreshRuntimeState();
+  const installer = getRuntimeInstaller();
+  const installed = installer.isInstalled();
+  const configured = existsSync(runtime.envFile);
   let hasApiKey = false;
   let verified = false;
 
   if (installed) {
     try {
-      execSync(`"${HERMES_PYTHON}" "${HERMES_SCRIPT}" --version`, {
-        cwd: HERMES_REPO,
-        env: {
-          ...process.env,
-          PATH: getEnhancedPath(),
-          HOME: homedir(),
-          HERMES_HOME,
-        },
-        stdio: "ignore",
-        timeout: 15000,
+      const cmd = runtime.buildCliCmd();
+      await processRunner.run(cmd.command, [...cmd.args, "--version"], {
+        cwd: runtime.hermesRepo,
+        env: buildHermesEnv(),
+        timeoutMs: 15000,
       });
       verified = true;
     } catch {
@@ -79,7 +166,7 @@ export function checkInstallStatus(): InstallStatus {
 
   if (!hasApiKey && configured) {
     try {
-      const content = readFileSync(HERMES_ENV_FILE, "utf-8");
+      const content = readFileSync(runtime.envFile, "utf-8");
       for (const line of content.split("\n")) {
         const trimmed = line.trim();
         if (trimmed.startsWith("#")) continue;
@@ -103,84 +190,42 @@ export function checkInstallStatus(): InstallStatus {
   return { installed, configured, hasApiKey, verified };
 }
 
-// Cached version to avoid re-running the Python process
-let _cachedVersion: string | null = null;
-let _versionFetching = false;
-
+/**
+ * Return the currently-installed Hermes Agent version, or null if the
+ * install isn't detected. Delegates to the runtime update service's
+ * cached version.
+ */
 export async function getHermesVersion(): Promise<string | null> {
-  if (_cachedVersion !== null) return _cachedVersion;
-  if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_SCRIPT)) return null;
-  if (_versionFetching) {
-    // Wait for in-flight fetch
-    return new Promise((resolve) => {
-      const check = setInterval(() => {
-        if (!_versionFetching) {
-          clearInterval(check);
-          resolve(_cachedVersion);
-        }
-      }, 100);
-    });
-  }
-  _versionFetching = true;
-  return new Promise((resolve) => {
-    execFile(
-      HERMES_PYTHON,
-      [HERMES_SCRIPT, "--version"],
-      {
-        cwd: HERMES_REPO,
-        env: {
-          ...process.env,
-          PATH: getEnhancedPath(),
-          HOME: homedir(),
-          HERMES_HOME,
-        },
-        timeout: 15000,
-      },
-      (error, stdout) => {
-        _versionFetching = false;
-        if (error) {
-          resolve(null);
-        } else {
-          _cachedVersion = stdout.toString().trim();
-          resolve(_cachedVersion);
-        }
-      },
-    );
-  });
+  refreshRuntimeState();
+  return getRuntimeUpdate().getCurrentVersion();
 }
 
+/**
+ * Force a re-fetch of the Hermes Agent version on the next getHermesVersion
+ * call. IPC handler in index.ts calls this after the user clicks "refresh
+ * version" in the Settings screen.
+ */
 export function clearVersionCache(): void {
-  _cachedVersion = null;
+  getRuntimeUpdate().clearVersionCache();
 }
 
-export function runHermesDoctor(): string {
-  if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_SCRIPT)) {
-    return "Hermes is not installed.";
-  }
-  try {
-    const output = execSync(`"${HERMES_PYTHON}" "${HERMES_SCRIPT}" doctor`, {
-      cwd: HERMES_REPO,
-      env: {
-        ...process.env,
-        PATH: getEnhancedPath(),
-        HOME: homedir(),
-        HERMES_HOME,
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 30000,
-    });
-    return stripAnsi(output.toString());
-  } catch (err) {
-    const stderr = (err as { stderr?: Buffer }).stderr?.toString() || "";
-    return stripAnsi(stderr) || "Doctor check failed.";
-  }
+/**
+ * Facade over runtimeInstaller.doctor(). Kept as a named export because
+ * the IPC handler `run-hermes-doctor` has always imported it from here.
+ */
+export async function runHermesDoctor(): Promise<string> {
+  return getRuntimeInstaller().doctor();
 }
 
 const OPENCLAW_DIR_NAMES = [".openclaw", ".clawdbot", ".moldbot"];
 
-export function checkOpenClawExists(): { found: boolean; path: string | null } {
+export function checkOpenClawExists(): {
+  found: boolean;
+  path: string | null;
+} {
+  const home = adapter.homeDir();
   for (const name of OPENCLAW_DIR_NAMES) {
-    const dir = join(homedir(), name);
+    const dir = join(home, name);
     if (existsSync(dir)) {
       return { found: true, path: dir };
     }
@@ -191,7 +236,7 @@ export function checkOpenClawExists(): { found: boolean; path: string | null } {
 export async function runClawMigrate(
   onProgress: (progress: InstallProgress) => void,
 ): Promise<void> {
-  if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_SCRIPT)) {
+  if (!existsSync(runtime.pythonExe) || !existsSync(runtime.cliProbePath)) {
     throw new Error("Hermes is not installed.");
   }
 
@@ -215,33 +260,17 @@ export async function runClawMigrate(
   emit(`Migrating from ${openclaw.path}...\n`);
 
   return new Promise((resolve, reject) => {
-    const args = [
-      HERMES_SCRIPT,
-      "claw",
-      "migrate",
-      "--preset",
-      "full",
-    ];
-
-    const proc = spawn(HERMES_PYTHON, args, {
-      cwd: HERMES_REPO,
-      env: {
-        ...process.env,
-        PATH: getEnhancedPath(),
-        HOME: homedir(),
-        HERMES_HOME,
-        TERM: "dumb",
+    const cmd = runtime.buildCliCmd();
+    const proc = processRunner.spawnStreaming(
+      cmd.command,
+      [...cmd.args, "claw", "migrate", "--preset", "full"],
+      {
+        cwd: runtime.hermesRepo,
+        env: buildHermesEnv({ TERM: "dumb" }),
+        onStdout: (chunk) => emit(stripAnsi(chunk)),
+        onStderr: (chunk) => emit(stripAnsi(chunk)),
       },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    proc.stdout?.on("data", (data: Buffer) => {
-      emit(stripAnsi(data.toString()));
-    });
-
-    proc.stderr?.on("data", (data: Buffer) => {
-      emit(stripAnsi(data.toString()));
-    });
+    );
 
     proc.on("close", (code) => {
       if (code === 0) {
@@ -258,203 +287,23 @@ export async function runClawMigrate(
   });
 }
 
+/**
+ * Facade over runtimeUpdate.applyUpdate(). Kept as a named export for
+ * the `run-hermes-update` IPC handler.
+ */
 export async function runHermesUpdate(
-  onProgress: (progress: InstallProgress) => void,
+  onProgress: (progress: UpdateProgress) => void,
 ): Promise<void> {
-  if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_SCRIPT)) {
-    throw new Error("Hermes is not installed. Please install it first.");
-  }
-
-  let log = "";
-  function emit(text: string): void {
-    log += text;
-    onProgress({
-      step: 1,
-      totalSteps: 1,
-      title: "Updating Hermes Agent",
-      detail: text.trim().slice(0, 120),
-      log,
-    });
-  }
-
-  emit("Running hermes update...\n");
-
-  return new Promise((resolve, reject) => {
-    const proc = spawn(HERMES_PYTHON, [HERMES_SCRIPT, "update"], {
-      cwd: HERMES_REPO,
-      env: {
-        ...process.env,
-        PATH: getEnhancedPath(),
-        HOME: homedir(),
-        HERMES_HOME,
-        TERM: "dumb",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    proc.stdout?.on("data", (data: Buffer) => {
-      emit(stripAnsi(data.toString()));
-    });
-
-    proc.stderr?.on("data", (data: Buffer) => {
-      emit(stripAnsi(data.toString()));
-    });
-
-    proc.on("close", (code) => {
-      if (code === 0) {
-        emit("\nUpdate complete!\n");
-        resolve();
-      } else {
-        reject(new Error(`Update failed (exit code ${code}).`));
-      }
-    });
-
-    proc.on("error", (err) => {
-      reject(new Error(`Failed to run update: ${err.message}`));
-    });
-  });
+  return getRuntimeUpdate().applyUpdate(onProgress);
 }
 
-function getShellProfile(home: string): string | null {
-  // Check for the user's shell profile to source their PATH
-  const candidates = [
-    join(home, ".zshrc"),
-    join(home, ".bashrc"),
-    join(home, ".bash_profile"),
-    join(home, ".profile"),
-  ];
-  for (const p of candidates) {
-    if (existsSync(p)) return p;
-  }
-  return null;
-}
-
-// Parse install.sh output to detect progress stages
-const STAGE_MARKERS: { pattern: RegExp; step: number; title: string }[] = [
-  {
-    pattern: /Checking for (git|uv|python)/i,
-    step: 1,
-    title: "Checking prerequisites",
-  },
-  {
-    pattern: /Installing uv|uv found/i,
-    step: 2,
-    title: "Setting up package manager",
-  },
-  {
-    pattern: /Installing Python|Python .* found/i,
-    step: 3,
-    title: "Setting up Python",
-  },
-  {
-    pattern: /Cloning|cloning|Updating.*repository|Repository/i,
-    step: 4,
-    title: "Downloading Hermes Agent",
-  },
-  {
-    pattern: /Creating virtual|virtual environment|venv/i,
-    step: 5,
-    title: "Creating Python environment",
-  },
-  {
-    pattern: /pip install|Installing.*packages|dependencies/i,
-    step: 6,
-    title: "Installing dependencies",
-  },
-  {
-    pattern: /Configuration|config|Setup complete|Installation complete/i,
-    step: 7,
-    title: "Finishing setup",
-  },
-];
-
+/**
+ * Facade over runtimeInstaller.install(). Kept as a named export for
+ * the `start-install` IPC handler.
+ */
 export async function runInstall(
   onProgress: (progress: InstallProgress) => void,
 ): Promise<void> {
-  const totalSteps = 7;
-  let log = "";
-  let currentStep = 1;
-  let currentTitle = "Starting installation...";
-
-  function emit(text: string): void {
-    log += text;
-    // Try to detect which stage we're in from the output
-    for (const marker of STAGE_MARKERS) {
-      if (marker.pattern.test(text)) {
-        if (marker.step >= currentStep) {
-          currentStep = marker.step;
-          currentTitle = marker.title;
-        }
-        break;
-      }
-    }
-    onProgress({
-      step: currentStep,
-      totalSteps,
-      title: currentTitle,
-      detail: text.trim().slice(0, 120),
-      log,
-    });
-  }
-
-  emit("Running official Hermes install script...\n");
-
-  return new Promise((resolve, reject) => {
-    const home = homedir();
-
-    // Source the user's shell profile to get the same PATH as their terminal,
-    // then run the official install script. Electron apps launched from Finder
-    // don't inherit the terminal environment.
-    const shellProfile = getShellProfile(home);
-    const installCmd = [
-      shellProfile ? `source "${shellProfile}" 2>/dev/null;` : "",
-      "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup",
-    ].join(" ");
-
-    const proc = spawn("bash", ["-c", installCmd], {
-      cwd: home,
-      env: {
-        ...process.env,
-        PATH: getEnhancedPath(),
-        HOME: home,
-        TERM: "dumb",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    proc.stdout?.on("data", (data: Buffer) => {
-      emit(stripAnsi(data.toString()));
-    });
-
-    proc.stderr?.on("data", (data: Buffer) => {
-      emit(stripAnsi(data.toString()));
-    });
-
-    proc.on("close", (code) => {
-      if (code === 0) {
-        emit("\nInstallation complete!\n");
-        resolve();
-      } else {
-        // The install script can exit non-zero due to benign issues
-        // (e.g. git stash pop failure on already-clean repo).
-        // If Hermes is actually installed and working, treat as success.
-        if (existsSync(HERMES_PYTHON) && existsSync(HERMES_SCRIPT)) {
-          emit(
-            "\nInstall script exited with warnings, but Hermes is installed successfully.\n",
-          );
-          resolve();
-        } else {
-          reject(
-            new Error(
-              `Installation failed (exit code ${code}). You can try installing via terminal instead.`,
-            ),
-          );
-        }
-      }
-    });
-
-    proc.on("error", (err) => {
-      reject(new Error(`Failed to start installer: ${err.message}`));
-    });
-  });
+  await getRuntimeInstaller().install(onProgress);
+  refreshRuntimeState();
 }

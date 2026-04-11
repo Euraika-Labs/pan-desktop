@@ -12,8 +12,21 @@ files:
   - "!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}"
 asarUnpack:
   - resources/**
+extraResources:
+  # Ship the vendored Hermes Agent PowerShell installer alongside the app.
+  # At runtime the Windows install strategy resolves it via
+  # `process.resourcesPath/install.ps1` in packaged builds and
+  # `<repoRoot>/resources/install.ps1` in dev. See
+  # `resources/install.ps1` header comment for the source commit SHA and
+  # supply-chain rationale.
+  - from: resources/install.ps1
+    to: install.ps1
 win:
   executableName: pan-desktop
+  requestedExecutionLevel: asInvoker
+  # Long-path manifest (longPathAware) is deferred to M1.1 — electron-builder
+  # 26.x has no direct `manifest` key, requires mt.exe + afterPack injection.
+  # See docs/WAVE_5_TO_9_PLAN.md Wave 6 gap #11 and M1_1_TICKETS.md
   # Code signing scaffold — activated in M1.1 when cert is acquired.
   # See docs/DECISIONS_M1.md §4 (Signing Path A) and DECISION_LOG.md 2026-04-10.
   # When activating: set WIN_CSC_LINK + WIN_CSC_KEY_PASSWORD as GitHub Actions secrets,
@@ -25,6 +38,8 @@ win:
   #   rfc3161TimeStampServer: http://timestamp.digicert.com
   # publisherName: Euraika Labs
 nsis:
+  oneClick: false
+  perMachine: false
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
@@ -50,7 +65,14 @@ linux:
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
-npmRebuild: false
+# npmRebuild runs "electron-rebuild" during packaging to ensure native
+# modules (better-sqlite3) are built against Electron's Node headers, not
+# the host Node's. Flipped from false to true in Wave 6 to fix the
+# ABI-mismatch issue that was masked by shipping the Linux-built .node on
+# win32-x64. Consequence: Windows NSIS builds must now run on windows-latest
+# CI, not on Linux hosts. Dev-loop cross-build on Linux still works via
+# npm_config_runtime/platform/arch/target env vars — see DEVELOPER_WORKFLOW.md.
+npmRebuild: true
 publish:
   # Generic provider pointing at GitLab Pages (see docs/DECISIONS_M1.md §5).
   # URL is a placeholder until GitLab Pages is enabled for the pan-desktop project.

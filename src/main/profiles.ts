@@ -1,16 +1,8 @@
-import { execFileSync } from "child_process";
-import { join } from "path";
-import { homedir } from "os";
 import { promises as fs } from "fs";
 import { existsSync } from "fs";
-import {
-  HERMES_HOME,
-  HERMES_PYTHON,
-  HERMES_SCRIPT,
-  getEnhancedPath,
-} from "./installer";
-
-const PROFILES_DIR = join(HERMES_HOME, "profiles");
+import { join } from "path";
+import { runtime, processRunner } from "./runtime/instance";
+import { buildHermesEnv } from "./installer";
 
 export interface ProfileInfo {
   name: string;
@@ -77,15 +69,17 @@ async function isGatewayRunning(profilePath: string): Promise<boolean> {
     const raw = await fs.readFile(pidFile, "utf-8");
     const pid = parseInt(raw.trim(), 10);
     if (isNaN(pid)) return false;
-    process.kill(pid, 0);
-    return true;
+    // Use processRunner.isProcessAlive instead of direct process.kill(pid, 0)
+    // so this file can be removed from the ESLint no-restricted-syntax
+    // exception list in eslint.config.mjs.
+    return processRunner.isProcessAlive(pid);
   } catch {
     return false;
   }
 }
 
 async function getActiveProfileName(): Promise<string> {
-  const activeFile = join(HERMES_HOME, "active_profile");
+  const activeFile = join(runtime.hermesHome, "active_profile");
   try {
     const name = await fs.readFile(activeFile, "utf-8");
     return name.trim() || "default";
@@ -107,19 +101,26 @@ export async function listProfiles(): Promise<ProfileInfo[]> {
   const activeName = await getActiveProfileName();
   const profiles: ProfileInfo[] = [];
 
-  // Default profile is HERMES_HOME itself
-  const [defaultConfig, defaultHasEnv, defaultHasSoul, defaultSkills, defaultGw] =
-    await Promise.all([
-      readProfileConfig(HERMES_HOME),
-      fileExists(join(HERMES_HOME, ".env")),
-      fileExists(join(HERMES_HOME, "SOUL.md")),
-      countSkills(HERMES_HOME),
-      isGatewayRunning(HERMES_HOME),
-    ]);
+  const profilesRoot = runtime.profilesRoot;
+
+  // Default profile is hermesHome itself
+  const [
+    defaultConfig,
+    defaultHasEnv,
+    defaultHasSoul,
+    defaultSkills,
+    defaultGw,
+  ] = await Promise.all([
+    readProfileConfig(runtime.hermesHome),
+    fileExists(join(runtime.hermesHome, ".env")),
+    fileExists(join(runtime.hermesHome, "SOUL.md")),
+    countSkills(runtime.hermesHome),
+    isGatewayRunning(runtime.hermesHome),
+  ]);
 
   profiles.push({
     name: "default",
-    path: HERMES_HOME,
+    path: runtime.hermesHome,
     isDefault: true,
     isActive: activeName === "default",
     model: defaultConfig.model,
@@ -130,12 +131,12 @@ export async function listProfiles(): Promise<ProfileInfo[]> {
     gatewayRunning: defaultGw,
   });
 
-  // Named profiles under ~/.hermes/profiles/
-  if (existsSync(PROFILES_DIR)) {
+  // Named profiles under <hermesHome>/profiles/
+  if (existsSync(profilesRoot)) {
     try {
-      const dirs = await fs.readdir(PROFILES_DIR);
+      const dirs = await fs.readdir(profilesRoot);
       const profilePromises = dirs.map(async (name) => {
-        const profilePath = join(PROFILES_DIR, name);
+        const profilePath = join(profilesRoot, name);
         const stat = await fs.stat(profilePath);
         if (!stat.isDirectory()) return null;
 
@@ -176,76 +177,56 @@ export async function listProfiles(): Promise<ProfileInfo[]> {
   return profiles;
 }
 
-export function createProfile(
+/**
+ * Run a `hermes profile <command>` via processRunner.
+ *
+ * All three profile-management functions (createProfile, deleteProfile,
+ * setActiveProfile) share the same spawn shape — this helper centralizes
+ * it so subprocess and env-shaping concerns live in one place.
+ */
+async function runProfileCommand(
+  args: string[],
+  timeoutMs: number,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const cmd = runtime.buildCliCmd();
+    await processRunner.run(cmd.command, [...cmd.args, ...args], {
+      cwd: runtime.hermesRepo,
+      env: buildHermesEnv(),
+      timeoutMs,
+    });
+    return { success: true };
+  } catch (err) {
+    const e = err as { stderr?: string; message?: string };
+    const msg = (e.stderr ?? e.message ?? "").trim();
+    return { success: false, error: msg };
+  }
+}
+
+export async function createProfile(
   name: string,
   clone: boolean,
-): { success: boolean; error?: string } {
-  try {
-    const args = clone
-      ? ["profile", "create", name, "--clone"]
-      : ["profile", "create", name];
-    execFileSync(HERMES_PYTHON, [HERMES_SCRIPT, ...args], {
-      cwd: join(HERMES_HOME, "hermes-agent"),
-      env: {
-        ...process.env,
-        PATH: getEnhancedPath(),
-        HOME: homedir(),
-        HERMES_HOME,
-      },
-      stdio: "pipe",
-      timeout: 15000,
-    });
-    return { success: true };
-  } catch (err) {
-    const msg =
-      (err as { stderr?: Buffer }).stderr?.toString() || (err as Error).message;
-    return { success: false, error: msg.trim() };
-  }
+): Promise<{ success: boolean; error?: string }> {
+  const args = clone
+    ? ["profile", "create", name, "--clone"]
+    : ["profile", "create", name];
+  return runProfileCommand(args, 15000);
 }
 
-export function deleteProfile(name: string): {
-  success: boolean;
-  error?: string;
-} {
-  if (name === "default")
+export async function deleteProfile(
+  name: string,
+): Promise<{ success: boolean; error?: string }> {
+  if (name === "default") {
     return { success: false, error: "Cannot delete the default profile" };
-  try {
-    execFileSync(
-      HERMES_PYTHON,
-      [HERMES_SCRIPT, "profile", "delete", name, "--yes"],
-      {
-        cwd: join(HERMES_HOME, "hermes-agent"),
-        env: {
-          ...process.env,
-          PATH: getEnhancedPath(),
-          HOME: homedir(),
-          HERMES_HOME,
-        },
-        stdio: "pipe",
-        timeout: 15000,
-      },
-    );
-    return { success: true };
-  } catch (err) {
-    const msg =
-      (err as { stderr?: Buffer }).stderr?.toString() || (err as Error).message;
-    return { success: false, error: msg.trim() };
   }
+  return runProfileCommand(["profile", "delete", name, "--yes"], 15000);
 }
 
-export function setActiveProfile(name: string): void {
+export async function setActiveProfile(name: string): Promise<void> {
+  // Fire-and-forget semantics preserved — we don't surface errors to the
+  // caller here because the IPC handler treats this as a best-effort toggle.
   try {
-    execFileSync(HERMES_PYTHON, [HERMES_SCRIPT, "profile", "use", name], {
-      cwd: join(HERMES_HOME, "hermes-agent"),
-      env: {
-        ...process.env,
-        PATH: getEnhancedPath(),
-        HOME: homedir(),
-        HERMES_HOME,
-      },
-      stdio: "pipe",
-      timeout: 10000,
-    });
+    await runProfileCommand(["profile", "use", name], 10000);
   } catch {
     // ignore
   }

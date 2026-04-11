@@ -1,9 +1,20 @@
 import Database from "better-sqlite3";
 import { join } from "path";
 import { existsSync } from "fs";
-import { HERMES_HOME } from "./installer";
+import { runtime } from "./runtime/instance";
 
-const DB_PATH = join(HERMES_HOME, "state.db");
+/**
+ * Session history reader.
+ *
+ * `state.db` is written by Hermes Agent (the Python process) as it runs
+ * conversations. Pan Desktop opens it read-only to show the user their
+ * history. The canonical location is `runtime.hermesHome/state.db` —
+ * that's where the agent writes it, so that's where we read it. It is
+ * NOT a desktop-owned file and it does NOT live under desktopPaths.
+ */
+function stateDbPath(): string {
+  return join(runtime.hermesHome, "state.db");
+}
 
 export interface SessionSummary {
   id: string;
@@ -34,8 +45,9 @@ export interface SearchResult {
 }
 
 function getDb(): Database.Database | null {
-  if (!existsSync(DB_PATH)) return null;
-  return new Database(DB_PATH, { readonly: true });
+  const path = stateDbPath();
+  if (!existsSync(path)) return null;
+  return new Database(path, { readonly: true });
 }
 
 export function listSessions(limit = 30, offset = 0): SessionSummary[] {

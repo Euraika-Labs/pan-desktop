@@ -21,11 +21,11 @@ Pan Desktop walks through installing, configuring, and chatting with Hermes Agen
 > `https://pan-desktop.euraika-labs.net/releases/` (GitLab Pages, pending setup).
 > Until that channel is live, download builds directly from CI artifacts.
 
-| Platform | File |
-|----------|------|
-| Windows | `.exe` (NSIS installer, unsigned for M1 — see SmartScreen notice below) |
-| macOS | `.dmg` |
-| Linux | `.AppImage` or `.deb` |
+| Platform | File                                                                    |
+| -------- | ----------------------------------------------------------------------- |
+| Windows  | `.exe` (NSIS installer, unsigned for M1 — see SmartScreen notice below) |
+| macOS    | `.dmg`                                                                  |
+| Linux    | `.AppImage` or `.deb`                                                   |
 
 ### Windows SmartScreen notice (M1)
 
@@ -34,6 +34,7 @@ Milestone 1 ships **unsigned**. When you run the installer, Windows SmartScreen 
 > Windows protected your PC — Microsoft Defender SmartScreen prevented an unrecognized app from starting.
 
 To proceed:
+
 1. Click **More info**
 2. Click **Run anyway**
 
@@ -65,12 +66,12 @@ Chat requests are routed through the local Hermes CLI, and Pan Desktop streams t
 
 Pan Desktop is built around four layers:
 
-| Layer | Lives in | Knows about |
-|---|---|---|
-| **Electron shell** | `src/main/index.ts`, `src/renderer/` | Windows, menus, IPC, UI state |
-| **Platform adapter** | `src/main/platform/` | OS-specific paths, process management, PATH handling |
-| **Runtime layer** | `src/main/runtime/` | Hermes Agent install/update/run; desktop-owned storage |
-| **Domain services** | `src/main/*.ts` | Profiles, memory, tools, skills, sessions, cron |
+| Layer                | Lives in                             | Knows about                                            |
+| -------------------- | ------------------------------------ | ------------------------------------------------------ |
+| **Electron shell**   | `src/main/index.ts`, `src/renderer/` | Windows, menus, IPC, UI state                          |
+| **Platform adapter** | `src/main/platform/`                 | OS-specific paths, process management, PATH handling   |
+| **Runtime layer**    | `src/main/runtime/`                  | Hermes Agent install/update/run; desktop-owned storage |
+| **Domain services**  | `src/main/*.ts`                      | Profiles, memory, tools, skills, sessions, cron        |
 
 The Wave 1 refactor (in progress) establishes this separation so that no feature code cares whether the app runs on Windows, macOS, or Linux. See the planning workspace `docs/ARCHITECTURE_OVERVIEW.md` for the full layer contract and invariants.
 
@@ -79,11 +80,13 @@ The Wave 1 refactor (in progress) establishes this separation so that no feature
 ### Prerequisites
 
 **All platforms:**
+
 - Node.js 22 or newer (pin via `.nvmrc` if you use nvm)
 - npm 10+
 - Git
 
 **Windows additionally:**
+
 - [Visual C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) — required for `better-sqlite3` native rebuild during `npm install`
 - Python 3.x — required by `node-gyp`
 - [Git for Windows](https://gitforwindows.org/) — the Hermes Agent installer currently requires a Bash backend internally (Git Bash is acceptable)

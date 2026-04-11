@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
-import { HERMES_HOME } from "./installer";
+import { runtime } from "./runtime/instance";
 import { profileHome, escapeRegex, safeWriteFile } from "./utils";
 
 // ── In-memory cache with TTL ─────────────────────────────
@@ -146,7 +146,11 @@ export function getModelConfig(profile?: string): {
   baseUrl: string;
 } {
   const cacheKey = `mc:${profile || "default"}`;
-  const cached = getCached<{ provider: string; model: string; baseUrl: string }>(cacheKey);
+  const cached = getCached<{
+    provider: string;
+    model: string;
+    baseUrl: string;
+  }>(cacheKey);
   if (cached) return cached;
 
   const { configFile } = profilePaths(profile);
@@ -224,7 +228,13 @@ export function getHermesHome(profile?: string): string {
 
 // ── Platform enabled/disabled in config.yaml ────────────
 
-const SUPPORTED_PLATFORMS = ["telegram", "discord", "slack", "whatsapp", "signal"];
+const SUPPORTED_PLATFORMS = [
+  "telegram",
+  "discord",
+  "slack",
+  "whatsapp",
+  "signal",
+];
 
 export function getPlatformEnabled(profile?: string): Record<string, boolean> {
   const { configFile } = profilePaths(profile);
@@ -308,7 +318,12 @@ export function setPlatformEnabled(
 // ── Credential Pool (auth.json) ──────────────────────────
 
 function authFilePath(): string {
-  return join(HERMES_HOME, "auth.json");
+  // auth.json stores credential-pool entries for the desktop UI. It lives
+  // in the Hermes Agent home directory (not Pan Desktop's own userData)
+  // for backward compatibility with existing Unix users — moving it to
+  // `%APPDATA%\Pan Desktop\auth.json` would strand credentials on upgrade.
+  // Revisit during M1.1 when we introduce forced data migration.
+  return join(runtime.hermesHome, "auth.json");
 }
 
 interface CredentialEntry {
