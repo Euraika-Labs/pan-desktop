@@ -1,28 +1,29 @@
-const { execSync } = require('child_process')
-const path = require('path')
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { execSync } = require("child_process");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const path = require("path");
 
 exports.default = async function afterPack(context) {
-  const platform = context.electronPlatformName
+  const platform = context.electronPlatformName;
 
-  if (platform === 'darwin') {
+  if (platform === "darwin") {
     const appPath = path.join(
       context.appOutDir,
       `${context.packager.appInfo.productFilename}.app`
-    )
-    console.log(`Ad-hoc re-signing: ${appPath}`)
-    execSync(
-      `codesign --force --deep --sign - "${appPath}"`,
-      { stdio: 'inherit' }
-    )
-    return
+    );
+    console.log(`Ad-hoc re-signing: ${appPath}`);
+    execSync(`codesign --force --deep --sign - "${appPath}"`, {
+      stdio: "inherit",
+    });
+    return;
   }
 
-  if (platform === 'win32') {
+  if (platform === "win32") {
     // M1 ships unsigned (Path A — see docs/DECISIONS_M1.md §4).
     // When activating signing in M1.1, add signtool invocation here or rely on
     // electron-builder's win.sign config instead.
-    return
+    return;
   }
 
   // Linux and others: no post-pack signing.
-}
+};
