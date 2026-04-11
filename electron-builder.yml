@@ -1,0 +1,60 @@
+afterPack: build/afterPack.js
+appId: net.euraika.pandesktop
+productName: Pan Desktop
+directories:
+  buildResources: build
+files:
+  - "!**/.vscode/*"
+  - "!src/*"
+  - "!electron.vite.config.{js,ts,mjs,cjs}"
+  - "!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}"
+  - "!{.env,.env.*,.npmrc,pnpm-lock.yaml}"
+  - "!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}"
+asarUnpack:
+  - resources/**
+win:
+  executableName: pan-desktop
+  # Code signing scaffold — activated in M1.1 when cert is acquired.
+  # See docs/DECISIONS_M1.md §4 (Signing Path A) and DECISION_LOG.md 2026-04-10.
+  # When activating: set WIN_CSC_LINK + WIN_CSC_KEY_PASSWORD as GitHub Actions secrets,
+  # uncomment the sign block below, fill publisherName matching the cert CN.
+  # sign:
+  #   certificateFile: ${env.WIN_CSC_LINK}
+  #   certificatePassword: ${env.WIN_CSC_KEY_PASSWORD}
+  #   signingHashAlgorithms: [sha256]
+  #   rfc3161TimeStampServer: http://timestamp.digicert.com
+  # publisherName: Euraika Labs
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always
+mac:
+  icon: build/icon.icns
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  extendInfo:
+    - NSCameraUsageDescription: Application requests access to the device's camera.
+    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
+    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
+    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+  notarize: false
+dmg:
+  artifactName: ${name}-${version}.${ext}
+linux:
+  target:
+    - AppImage
+    - snap
+    - deb
+  maintainer: euraika.net
+  category: Utility
+appImage:
+  artifactName: ${name}-${version}.${ext}
+npmRebuild: false
+publish:
+  # Generic provider pointing at GitLab Pages (see docs/DECISIONS_M1.md §5).
+  # URL is a placeholder until GitLab Pages is enabled for the pan-desktop project.
+  # Track: external unblocker #3 in DECISIONS_M1.md §9.
+  provider: generic
+  url: https://pan-desktop.euraika-labs.net/releases/
+  channel: latest

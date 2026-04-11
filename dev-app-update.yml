@@ -1,0 +1,4 @@
+provider: generic
+url: https://pan-desktop.euraika-labs.net/releases/
+channel: latest
+updaterCacheDirName: pan-desktop-updater

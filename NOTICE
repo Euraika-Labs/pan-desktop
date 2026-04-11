@@ -1,0 +1,22 @@
+Pan Desktop
+Copyright (c) 2026 Euraika Labs
+
+This product is a hard fork of Hermes Desktop, originally developed by fathah
+(https://github.com/fathah/hermes-desktop) and released under the MIT License.
+Significant portions of this codebase originate from that upstream work and are
+used with attribution under the terms of the MIT License. The full MIT License
+text, including both copyright notices, is available in the LICENSE file.
+
+Origin snapshot:
+  Upstream: https://github.com/fathah/hermes-desktop
+  Forked at: Pan Desktop v0.0.1 (2026-04-11)
+  Fork type: Hard fork — no upstream sync.
+  Rationale:  See docs/DECISIONS_M1.md in the pan-desktop planning workspace
+              for the full rebrand decision and rationale.
+
+Pan Desktop integrates with but does not include Hermes Agent. Hermes Agent is
+a separate project: https://github.com/NousResearch/hermes-agent
+
+The upstream Hermes Desktop commit history was squashed at v0.0.1 to establish
+a clean baseline for the Windows port. Individual authorship of prior commits
+is preserved via this NOTICE file and by reference to the upstream repository.
