@@ -3,6 +3,13 @@ import { electronAPI } from "@electron-toolkit/preload";
 
 const hermesAPI = {
   // Installation
+  getInstallInstructions: (): Promise<{
+    supported: boolean;
+    heading: string;
+    body: string;
+    manualCommand?: string;
+  }> => ipcRenderer.invoke("get-install-instructions"),
+
   checkInstall: (): Promise<{
     installed: boolean;
     configured: boolean;

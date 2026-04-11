@@ -323,7 +323,7 @@ export const GATEWAY_PLATFORMS: PlatformDef[] = [
   },
 ];
 
-// ── Install ─────────────────────────────────────────────
-
-export const INSTALL_CMD =
-  "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash";
+// Install command strings live in the main process (src/main/installer.ts
+// getInstallInstructions) and are fetched by the renderer via IPC. See
+// docs/ARCHITECTURE_OVERVIEW.md §Invariants #5 for why the renderer must
+// not author install/update command strings.

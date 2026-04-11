@@ -12,6 +12,7 @@ import {
   runHermesUpdate,
   checkOpenClawExists,
   runClawMigrate,
+  getInstallInstructions,
   InstallProgress,
 } from "./installer";
 import {
@@ -162,6 +163,8 @@ function createWindow(): void {
 
 function setupIPC(): void {
   // Installation
+  ipcMain.handle("get-install-instructions", () => getInstallInstructions());
+
   ipcMain.handle("check-install", () => {
     return checkInstallStatus();
   });
