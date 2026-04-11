@@ -115,9 +115,47 @@ jobs:
             dist/*.deb
             dist/latest-linux.yml
 
+  release_win:
+    name: Build Windows
+    needs: prepare
+    if: needs.prepare.outputs.tag_exists == 'false'
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build
+
+      - name: Package Windows artifacts
+        env:
+          # M1 ships unsigned (Path A — see docs/DECISIONS_M1.md §4).
+          # When signing activates in M1.1, set WIN_CSC_LINK + WIN_CSC_KEY_PASSWORD
+          # as repo secrets and remove CSC_IDENTITY_AUTO_DISCOVERY.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --win nsis --publish never
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: win-artifacts
+          path: |
+            dist/*.exe
+            dist/*.exe.blockmap
+            dist/latest.yml
+
   publish:
     name: Publish Release
-    needs: [prepare, release_mac, release_linux]
+    needs: [prepare, release_mac, release_linux, release_win]
     if: needs.prepare.outputs.tag_exists == 'false'
     runs-on: ubuntu-latest
     steps:

@@ -178,7 +178,9 @@ function Agents({
             onClick={() => handleSelect(p.name)}
             role="button"
             tabIndex={0}
-            onKeyDown={(e) => { if (e.key === "Enter") handleSelect(p.name); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleSelect(p.name);
+            }}
           >
             <div className="agents-card-header">
               <AgentAvatar name={p.name} />

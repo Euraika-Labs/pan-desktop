@@ -1,10 +1,5 @@
 import { spawn, ChildProcess, execSync } from "child_process";
-import {
-  existsSync,
-  readFileSync,
-  unlinkSync,
-  mkdirSync,
-} from "fs";
+import { existsSync, readFileSync, unlinkSync, mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { createConnection } from "net";

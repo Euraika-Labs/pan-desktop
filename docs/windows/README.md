@@ -18,6 +18,7 @@ Make Hermes Desktop work on Windows by replacing Unix-only Hermes runtime assump
 ## Source context
 
 The roadmap assumes:
+
 - `hermes-desktop` already builds for Windows as an Electron app
 - the real blockers are in runtime integration and installer/update orchestration
 - Hermes Agent now has a meaningful native Windows path via PowerShell + Git for Windows Bash backend
