@@ -9,7 +9,7 @@ exports.default = async function afterPack(context) {
   if (platform === "darwin") {
     const appPath = path.join(
       context.appOutDir,
-      `${context.packager.appInfo.productFilename}.app`
+      `${context.packager.appInfo.productFilename}.app`,
     );
     console.log(`Ad-hoc re-signing: ${appPath}`);
     execSync(`codesign --force --deep --sign - "${appPath}"`, {

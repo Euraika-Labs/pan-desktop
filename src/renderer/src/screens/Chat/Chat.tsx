@@ -28,17 +28,51 @@ interface SlashCommand {
 
 const SLASH_COMMANDS: SlashCommand[] = [
   // Chat control
-  { name: "/new", description: "Start a new chat", category: "chat", local: true },
-  { name: "/clear", description: "Clear conversation history", category: "chat", local: true },
+  {
+    name: "/new",
+    description: "Start a new chat",
+    category: "chat",
+    local: true,
+  },
+  {
+    name: "/clear",
+    description: "Clear conversation history",
+    category: "chat",
+    local: true,
+  },
   // Agent commands (sent to backend)
-  { name: "/btw", description: "Ask a side question without affecting context", category: "agent" },
-  { name: "/approve", description: "Approve a pending action", category: "agent" },
+  {
+    name: "/btw",
+    description: "Ask a side question without affecting context",
+    category: "agent",
+  },
+  {
+    name: "/approve",
+    description: "Approve a pending action",
+    category: "agent",
+  },
   { name: "/deny", description: "Deny a pending action", category: "agent" },
-  { name: "/status", description: "Show current agent status", category: "agent" },
-  { name: "/reset", description: "Reset conversation context", category: "agent" },
-  { name: "/compact", description: "Compact and summarize the conversation", category: "agent" },
+  {
+    name: "/status",
+    description: "Show current agent status",
+    category: "agent",
+  },
+  {
+    name: "/reset",
+    description: "Reset conversation context",
+    category: "agent",
+  },
+  {
+    name: "/compact",
+    description: "Compact and summarize the conversation",
+    category: "agent",
+  },
   { name: "/undo", description: "Undo the last action", category: "agent" },
-  { name: "/retry", description: "Retry the last failed action", category: "agent" },
+  {
+    name: "/retry",
+    description: "Retry the last failed action",
+    category: "agent",
+  },
   // Tools & capabilities
   { name: "/web", description: "Search the web", category: "tools" },
   { name: "/image", description: "Generate an image", category: "tools" },
@@ -47,10 +81,18 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/file", description: "Read or write files", category: "tools" },
   { name: "/shell", description: "Run a shell command", category: "tools" },
   // Info
-  { name: "/help", description: "Show available commands and help", category: "info" },
+  {
+    name: "/help",
+    description: "Show available commands and help",
+    category: "info",
+  },
   { name: "/tools", description: "List available tools", category: "info" },
   { name: "/skills", description: "List installed skills", category: "info" },
-  { name: "/model", description: "Show or switch the current model", category: "info" },
+  {
+    name: "/model",
+    description: "Show or switch the current model",
+    category: "info",
+  },
   { name: "/memory", description: "Show agent memory", category: "info" },
   { name: "/persona", description: "Show current persona", category: "info" },
   { name: "/version", description: "Show Hermes version", category: "info" },
@@ -103,7 +145,10 @@ const MessageRow = memo(function MessageRow({
         isLast &&
         APPROVAL_RE.test(msg.content) && (
           <div className="chat-approval-bar">
-            <button className="chat-approval-btn chat-approve" onClick={onApprove}>
+            <button
+              className="chat-approval-btn chat-approve"
+              onClick={onApprove}
+            >
               Approve
             </button>
             <button className="chat-approval-btn chat-deny" onClick={onDeny}>
@@ -279,11 +324,17 @@ function Chat({
   // Scroll active slash menu item into view
   useEffect(() => {
     if (!slashMenuOpen) return;
-    const active = slashMenuRef.current?.querySelector(".slash-menu-item-active");
+    const active = slashMenuRef.current?.querySelector(
+      ".slash-menu-item-active",
+    );
     active?.scrollIntoView({ block: "nearest" });
   }, [slashSelectedIndex, slashMenuOpen]);
 
-  async function selectModel(provider: string, model: string, baseUrl: string): Promise<void> {
+  async function selectModel(
+    provider: string,
+    model: string,
+    baseUrl: string,
+  ): Promise<void> {
     await window.hermesAPI.setModelConfig(provider, model, baseUrl, profile);
     setCurrentModel(model);
     setCurrentProvider(provider);
@@ -862,15 +913,15 @@ function Chat({
           </div>
         ) : (
           visibleMessages.map((msg, i) => (
-              <MessageRow
-                key={msg.id}
-                msg={msg}
-                isLast={i === visibleMessages.length - 1}
-                isLoading={isLoading}
-                onApprove={handleApprove}
-                onDeny={handleDeny}
-              />
-            ))
+            <MessageRow
+              key={msg.id}
+              msg={msg}
+              isLast={i === visibleMessages.length - 1}
+              isLoading={isLoading}
+              onApprove={handleApprove}
+              onDeny={handleDeny}
+            />
+          ))
         )}
 
         {isLoading && !lastMessageIsAgent && (
@@ -913,7 +964,9 @@ function Chat({
                   onClick={() => handleSlashSelect(cmd)}
                 >
                   <span className="slash-menu-item-name">{cmd.name}</span>
-                  <span className="slash-menu-item-desc">{cmd.description}</span>
+                  <span className="slash-menu-item-desc">
+                    {cmd.description}
+                  </span>
                 </button>
               ))}
             </div>
@@ -985,7 +1038,9 @@ function Chat({
                     <button
                       key={`${m.provider}:${m.model}`}
                       className={`chat-model-option ${currentModel === m.model && currentProvider === m.provider ? "active" : ""}`}
-                      onClick={() => selectModel(m.provider, m.model, m.baseUrl)}
+                      onClick={() =>
+                        selectModel(m.provider, m.model, m.baseUrl)
+                      }
                     >
                       <span className="chat-model-option-label">{m.label}</span>
                       <span className="chat-model-option-id">{m.model}</span>
