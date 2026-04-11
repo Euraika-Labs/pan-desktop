@@ -10,6 +10,11 @@ import { join } from "path";
 import treeKill from "tree-kill";
 import type { PlatformAdapter } from "./platformAdapter";
 
+// Re-export ChildProcess so feature code can use the type without
+// importing from "child_process" directly (which would violate the
+// no-restricted-imports rule).
+export type { ChildProcess };
+
 /**
  * Result of a one-shot process run. stdout and stderr are captured strings,
  * exit code may be null if the process was killed by a signal.
@@ -37,6 +42,24 @@ export interface SpawnStreamingOptions {
   onStdout?: (chunk: string) => void;
   /** Called with each chunk of stderr as it arrives. */
   onStderr?: (chunk: string) => void;
+  /**
+   * If true, spawn the child detached from the parent process. This is
+   * used for LONG-LIVED background daemons (like the Hermes gateway)
+   * that are expected to survive the Electron main process exiting.
+   * The caller is responsible for also calling `child.unref()` if they
+   * want Node to exit while the child runs.
+   *
+   * Default: false. Most callers want the child to die when the parent
+   * exits — that's the default Node behavior. Only set this for true
+   * daemon use cases.
+   */
+  detached?: boolean;
+  /**
+   * stdio mode for the spawned child. Defaults to `["ignore", "pipe", "pipe"]`
+   * so onStdout/onStderr callbacks work. Daemon processes that should NOT
+   * inherit the parent's stdio streams can pass `"ignore"` to fully detach.
+   */
+  stdio?: SpawnOptions["stdio"];
 }
 
 export interface KillTreeOptions {
@@ -105,6 +128,18 @@ export interface ProcessRunner {
     processOrPid: ChildProcess | number,
     options?: KillTreeOptions,
   ): Promise<void>;
+
+  /**
+   * Check whether a pid currently refers to a live process. Uses signal 0
+   * (the POSIX probe signal, which Node polyfills on Windows) — does NOT
+   * actually signal the process. Returns false on ESRCH/EPERM/ESRCH-ish
+   * errors, true if the probe succeeds.
+   *
+   * This exists so feature code doesn't have to write `process.kill(pid, 0)`
+   * directly (which would trip the `no-restricted-syntax` rule banning
+   * `process.kill` outside the platform layer).
+   */
+  isProcessAlive(pid: number): boolean;
 }
 
 export interface CreateProcessRunnerOptions {
@@ -187,22 +222,22 @@ export function createProcessRunner(
     args: readonly string[],
     opts: SpawnStreamingOptions = {},
   ): ChildProcess => {
+    // Default stdio lets callers capture stdout/stderr via callbacks.
+    // Daemon callers pass "ignore" to fully cut the cord.
+    const stdio = opts.stdio ?? ["ignore", "pipe", "pipe"];
+
     const spawnOpts: SpawnOptions = {
       cwd: opts.cwd,
       env: opts.env,
       shell: false,
       windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      // `detached: false` (the default). We deliberately DO NOT promote
-      // children to their own process group on POSIX because:
-      //   1. tree-kill walks the process tree via `ps` / `taskkill /T`
-      //      and does not need the child to be a group leader
-      //   2. a detached child does NOT receive SIGTERM/SIGINT when its
-      //      parent (the Electron main process) exits naturally, which
-      //      leaks the Hermes gateway and Claw3D dev server every time
-      //      the user closes the app
-      //   3. Windows `detached: true` has different semantics (console
-      //      detach) and is equally unwanted here
+      stdio,
+      // `detached` is caller-opt-in. Default false: child dies with parent
+      // (the normal Node behavior you want for Claw3D dev server, chat
+      // CLI fallback, install script, etc.). Daemon callers (Hermes
+      // gateway) set `detached: true` explicitly and ALSO call
+      // `child.unref()` if they want Node to exit while the child runs.
+      detached: opts.detached ?? false,
     };
     // Prevent the unused adapter variable from triggering a lint warning
     // in the meantime — we keep adapter in the signature because future
@@ -318,10 +353,26 @@ export function createProcessRunner(
     });
   };
 
+  const isProcessAlive = (pid: number): boolean => {
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try {
+      // Signal 0 is a no-op probe. Node documents it as the portable way
+      // to check "is this pid still alive" on POSIX AND Windows. This is
+      // the one authorized use of process.kill inside the platform
+      // boundary — processRunner.ts is already exempt from the
+      // no-restricted-syntax rule that bans process.kill elsewhere.
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   return {
     run,
     spawnStreaming,
     findExecutable,
     killTree,
+    isProcessAlive,
   };
 }

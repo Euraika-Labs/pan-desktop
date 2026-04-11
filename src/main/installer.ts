@@ -2,12 +2,10 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { getModelConfig } from "./config";
 import { stripAnsi } from "./utils";
-import { createPlatformAdapter } from "./platform/platformAdapter";
-import { createProcessRunner } from "./platform/processRunner";
-import { getRuntimePaths } from "./runtime/runtimePaths";
+import { adapter, runtime, processRunner } from "./runtime/instance";
 
 /**
- * Wave 1 refactor (2026-04-11):
+ * Wave 1 + 2 refactor (2026-04-11):
  *
  * This module used to be the choke point for the Unix-only assumptions in
  * Pan Desktop — hardcoded `~/.hermes`, `venv/bin/python`, `spawn("bash")`,
@@ -21,31 +19,17 @@ import { getRuntimePaths } from "./runtime/runtimePaths";
  *   - processRunner (subprocess execution, tree-kill termination,
  *     findExecutable, no shell strings anywhere)
  *
- * The HERMES_HOME / HERMES_PYTHON / etc. constants below are KEPT as exports
- * for backward compatibility with existing importers (config.ts, profiles.ts,
- * skills.ts, hermes.ts, session-cache.ts, cronjobs.ts, models.ts, sessions.ts).
- * Wave 2 will migrate each of those files to call runtimePaths directly,
- * after which these re-exports can be deleted.
+ * As of Wave 2, every importer (config, profiles, memory, tools, soul,
+ * cronjobs, session-cache, sessions, skills, hermes, claw3d) has been
+ * migrated to call the `runtime` singleton directly rather than importing
+ * HERMES_HOME / HERMES_PYTHON / etc. from this module. The re-exports
+ * that existed during Wave 1 have been DELETED — any file still trying
+ * to `import { HERMES_PYTHON } from "./installer"` will fail compilation,
+ * which is the enforcement mechanism that keeps Wave 1 invariants from
+ * regressing.
  *
- * Unlike the old version, these values are now CORRECT on Windows because
- * runtimePaths handles the venv/Scripts/python.exe vs venv/bin/python split.
  * See docs/DECISIONS_M1.md §5 and docs/ARCHITECTURE_OVERVIEW.md §Invariants.
  */
-
-// Module-level adapter + runtime paths + process runner. Created once at
-// module load; pure functions of process.platform / homedir / env.
-const adapter = createPlatformAdapter();
-const runtime = getRuntimePaths(adapter);
-const processRunner = createProcessRunner({ adapter });
-
-// ─── Backward-compat exports (Wave 2 will migrate importers off these) ─────
-export const HERMES_HOME = runtime.hermesHome;
-export const HERMES_REPO = runtime.hermesRepo;
-export const HERMES_VENV = runtime.venvDir;
-export const HERMES_PYTHON = runtime.pythonExe;
-export const HERMES_SCRIPT = runtime.hermesCli;
-export const HERMES_ENV_FILE = runtime.envFile;
-export const HERMES_CONFIG_FILE = runtime.configFile;
 
 export interface InstallStatus {
   installed: boolean;

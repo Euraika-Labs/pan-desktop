@@ -1,7 +1,6 @@
 import { join, dirname } from "path";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { createPlatformAdapter } from "./platform/platformAdapter";
-import { getRuntimePaths } from "./runtime/runtimePaths";
+import { runtime } from "./runtime/instance";
 
 /**
  * Strip ANSI escape codes from terminal output.
@@ -15,11 +14,6 @@ export function stripAnsi(str: string): string {
   return str.replace(ANSI_RE, "");
 }
 
-// Module-level runtime paths for profileHome(). The adapter is created once
-// and reused so we don't re-detect the platform on every call.
-const _adapter = createPlatformAdapter();
-const _runtime = getRuntimePaths(_adapter);
-
 /**
  * Resolve the home directory for a given profile.
  *
@@ -29,11 +23,11 @@ const _runtime = getRuntimePaths(_adapter);
  * Unix, `%LOCALAPPDATA%\hermes` on Windows).
  *
  * This function is what profile/memory/tool/soul services call to locate
- * their per-profile files. It delegates to runtimePaths.profileHome so the
- * "profile is a subdirectory" invariant lives in exactly one place.
+ * their per-profile files. It delegates to the shared runtime singleton
+ * so the "profile is a subdirectory" invariant lives in exactly one place.
  */
 export function profileHome(profile?: string): string {
-  return _runtime.profileHome(profile);
+  return runtime.profileHome(profile);
 }
 
 /**

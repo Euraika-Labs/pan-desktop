@@ -1,12 +1,28 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { HERMES_HOME } from "./installer";
+import { runtime, getDesktop } from "./runtime/instance";
 import { safeWriteFile } from "./utils";
 import Database from "better-sqlite3";
 
-const CACHE_DIR = join(HERMES_HOME, "desktop");
-const CACHE_FILE = join(CACHE_DIR, "sessions.json");
-const DB_PATH = join(HERMES_HOME, "state.db");
+/**
+ * Session cache file — desktop-owned. Lives under `desktopPaths.sessionCache`
+ * (Windows: %APPDATA%\Pan Desktop\sessions.json, macOS: ~/Library/Application
+ * Support/Pan Desktop/sessions.json, Linux: ~/.config/Pan Desktop/sessions.json)
+ * and falls back to the legacy `HERMES_HOME/desktop/sessions.json` for
+ * existing Unix users. Managed by the fallback logic in desktopPaths.ts.
+ *
+ * state.db — agent-owned, NOT desktop-owned. Always at `runtime.hermesHome/
+ * state.db` because that's where Hermes Agent (the Python process) writes it.
+ * Pan Desktop opens it read-only.
+ */
+function cacheFilePath(): string {
+  // Lazily resolve so Electron's app.getPath() is called after `ready`.
+  return getDesktop().sessionCache;
+}
+
+function stateDbPath(): string {
+  return join(runtime.hermesHome, "state.db");
+}
 
 export interface CachedSession {
   id: string;
@@ -54,8 +70,9 @@ function generateTitle(message: string): string {
 
 function readCache(): CacheData {
   try {
-    if (!existsSync(CACHE_FILE)) return { sessions: [], lastSync: 0 };
-    return JSON.parse(readFileSync(CACHE_FILE, "utf-8"));
+    const path = cacheFilePath();
+    if (!existsSync(path)) return { sessions: [], lastSync: 0 };
+    return JSON.parse(readFileSync(path, "utf-8"));
   } catch {
     return { sessions: [], lastSync: 0 };
   }
@@ -63,15 +80,16 @@ function readCache(): CacheData {
 
 function writeCache(data: CacheData): void {
   try {
-    safeWriteFile(CACHE_FILE, JSON.stringify(data));
+    safeWriteFile(cacheFilePath(), JSON.stringify(data));
   } catch {
     // non-fatal
   }
 }
 
 function getDb(): Database.Database | null {
-  if (!existsSync(DB_PATH)) return null;
-  return new Database(DB_PATH, { readonly: true });
+  const path = stateDbPath();
+  if (!existsSync(path)) return null;
+  return new Database(path, { readonly: true });
 }
 
 // Sync from hermes DB to local cache — only fetches new/updated sessions

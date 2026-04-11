@@ -62,13 +62,14 @@ export default defineConfig(
       "src/main/platform/processRunner.ts",
       // Tests spawn processes intentionally to verify behavior.
       "src/main/**/*.test.ts",
-      // Wave 2/3 migration targets — remove from this list as each file
-      // gets migrated onto processRunner. Current as of 2026-04-11.
-      "src/main/claw3d.ts",
-      "src/main/hermes.ts",
-      "src/main/profiles.ts",
-      "src/main/skills.ts",
-      "src/main/cronjobs.ts",
+      // Wave 2/3 migration targets were removed from this list on
+      // 2026-04-11 as part of feature/wave2-service-migration:
+      //   - cronjobs.ts (Batch 3)
+      //   - profiles.ts (Batch 3)
+      //   - skills.ts   (Batch 3)
+      //   - hermes.ts   (Wave 3)
+      //   - claw3d.ts   (Wave 3)
+      // All now route through processRunner.
     ],
     rules: {
       "no-restricted-imports": [
