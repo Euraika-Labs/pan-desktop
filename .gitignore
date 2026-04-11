@@ -27,3 +27,6 @@ pnpm-debug.log*
 # Electron packaging artifacts
 release/
 .claude/worktrees
+
+# Orchestrator session state
+.claude-octopus/

@@ -51,6 +51,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Test
+        run: npm test
+
       - name: Build
         env:
           # M1 ships unsigned — prevent electron-builder from trying to auto-discover

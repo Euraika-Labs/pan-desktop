@@ -15,8 +15,16 @@ interface InstallProgress {
   log: string;
 }
 
+interface InstallInstructions {
+  supported: boolean;
+  heading: string;
+  body: string;
+  manualCommand?: string;
+}
+
 interface HermesAPI {
   // Installation
+  getInstallInstructions: () => Promise<InstallInstructions>;
   checkInstall: () => Promise<InstallStatus>;
   startInstall: () => Promise<{ success: boolean; error?: string }>;
   onInstallProgress: (
