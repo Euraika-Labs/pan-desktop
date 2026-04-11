@@ -20,6 +20,7 @@
 stages:
   - build
   - pages
+  - post
 
 default:
   tags: [nvme]
@@ -121,3 +122,80 @@ pages:
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/
+
+# =============================================================================
+# auto_back_merge — propagate main commits into develop automatically
+#
+# Any push to main triggers this job, which:
+#   1. Clones develop
+#   2. Early-exits if develop is already up to date with main
+#   3. Creates a branch, merges main into it
+#   4. Pushes the branch and opens an MR targeting develop via the API
+#
+# Why this exists: MRs that land directly on main (hotfixes, Wave 4 CI, etc.)
+# skip develop and create branch skew. Git Flow standard is to back-merge
+# manually; we automate it instead.
+#
+# Requires CI/CD variable BACK_MERGE_TOKEN: a project access token with
+# `api` + `write_repository` scopes, stored masked + protected. When
+# BACK_MERGE_TOKEN is unset the job prints a warning and exits 0 (soft-skip)
+# so the pipeline stays green.
+# =============================================================================
+auto_back_merge:
+  stage: post
+  image: alpine:3.19
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  before_script:
+    - apk add --no-cache git curl jq
+  script:
+    - |
+      set -euo pipefail
+
+      if [ -z "${BACK_MERGE_TOKEN:-}" ]; then
+        echo "WARNING: BACK_MERGE_TOKEN is not set — auto-back-merge skipped."
+        echo "Create a project access token with 'api' + 'write_repository' scopes"
+        echo "and add it as a masked CI/CD variable named BACK_MERGE_TOKEN."
+        exit 0
+      fi
+
+      git config --global user.email "gitlab-ci@euraika.net"
+      git config --global user.name "Pan Desktop Auto-merge Bot"
+
+      WORK_DIR=$(mktemp -d)
+      git clone --branch develop \
+        "https://oauth2:${BACK_MERGE_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
+        "$WORK_DIR"
+      cd "$WORK_DIR"
+      git fetch origin main
+
+      COMMITS_TO_PROPAGATE=$(git rev-list --count HEAD..origin/main)
+      if [ "$COMMITS_TO_PROPAGATE" -eq 0 ]; then
+        echo "develop already contains all main commits — nothing to back-merge"
+        exit 0
+      fi
+
+      echo "Back-merging $COMMITS_TO_PROPAGATE commit(s) from main into develop"
+
+      BRANCH_NAME="auto/back-merge-main-${CI_COMMIT_SHORT_SHA}"
+      git checkout -b "$BRANCH_NAME"
+
+      if ! git merge --no-ff origin/main \
+          -m "Auto back-merge main (${CI_COMMIT_SHORT_SHA}) into develop"; then
+        echo "ERROR: back-merge has conflicts — resolve manually."
+        exit 1
+      fi
+
+      git push origin "$BRANCH_NAME"
+
+      MR_RESPONSE=$(curl -sS --fail-with-body \
+        --header "PRIVATE-TOKEN: ${BACK_MERGE_TOKEN}" \
+        --data-urlencode "source_branch=${BRANCH_NAME}" \
+        --data-urlencode "target_branch=develop" \
+        --data-urlencode "title=Auto: back-merge main ${CI_COMMIT_SHORT_SHA} into develop" \
+        --data-urlencode "description=Automated back-merge created by auto_back_merge CI job. Propagates ${COMMITS_TO_PROPAGATE} commit(s) from main into develop. Trigger: push to main at ${CI_COMMIT_SHA}." \
+        --data-urlencode "remove_source_branch=true" \
+        "https://${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/merge_requests")
+
+      MR_URL=$(echo "$MR_RESPONSE" | jq -r '.web_url')
+      echo "Back-merge MR created: $MR_URL"
