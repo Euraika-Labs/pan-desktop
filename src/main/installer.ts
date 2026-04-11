@@ -1,5 +1,5 @@
-import { execFileSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 import { getModelConfig } from "./config";
 import { stripAnsi } from "./utils";
 import { createPlatformAdapter } from "./platform/platformAdapter";
@@ -91,16 +91,21 @@ export interface InstallInstructions {
  */
 export function getInstallInstructions(): InstallInstructions {
   if (adapter.platform === "windows") {
+    // Deliberately no manualCommand. The upstream installer is bash-only
+    // and won't run under cmd.exe or PowerShell without WSL/Git Bash, so
+    // serving it as a copy-paste would mislead users. A real Windows
+    // installer lands in Wave 4 via runtimeInstaller.ts.
+    // Fixes HIGH review finding #3.
     return {
       supported: false,
-      heading: "Install Hermes Agent (Windows)",
+      heading: "Install Hermes Agent on Windows",
       body:
         "Native Windows install is scheduled for Wave 4. Until then, " +
-        "install Hermes Agent manually via Git Bash or WSL by running the " +
-        "upstream installer, then re-launch Pan Desktop to auto-detect the " +
-        "install.",
-      manualCommand:
-        "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash",
+        "open a Git Bash shell (from Git for Windows) or WSL terminal, " +
+        "run the upstream Hermes Agent installer there, then re-launch " +
+        "Pan Desktop to auto-detect the install. Pan Desktop will handle " +
+        "chat, profiles, memory and skills normally once Hermes Agent " +
+        "is on disk.",
     };
   }
   return {
@@ -150,7 +155,7 @@ export function buildHermesEnv(
   };
 }
 
-export function checkInstallStatus(): InstallStatus {
+export async function checkInstallStatus(): Promise<InstallStatus> {
   const installed =
     existsSync(runtime.pythonExe) && existsSync(runtime.hermesCli);
   const configured = existsSync(runtime.envFile);
@@ -158,17 +163,20 @@ export function checkInstallStatus(): InstallStatus {
   let verified = false;
 
   if (installed) {
-    // checkInstallStatus is called synchronously from IPC handlers that
-    // expect a sync return. We call execFileSync directly here rather than
-    // going through processRunner (which is async) so the sync contract
-    // holds. Wave 2 should make this async and route through processRunner.
+    // Route through processRunner.run so every subprocess call in this
+    // file goes through the one and only subprocess boundary. The IPC
+    // handler at src/main/index.ts already awaits the result — there was
+    // never a sync constraint, only a misread of ipcMain.handle's shape.
     try {
-      execFileSync(runtime.pythonExe, [runtime.hermesCli, "--version"], {
-        cwd: runtime.hermesRepo,
-        env: buildHermesEnv(),
-        stdio: "ignore",
-        timeout: 15000,
-      });
+      await processRunner.run(
+        runtime.pythonExe,
+        [runtime.hermesCli, "--version"],
+        {
+          cwd: runtime.hermesRepo,
+          env: buildHermesEnv(),
+          timeoutMs: 15000,
+        },
+      );
       verified = true;
     } catch {
       verified = false;
@@ -279,10 +287,15 @@ export async function runHermesDoctor(): Promise<string> {
 
 const OPENCLAW_DIR_NAMES = [".openclaw", ".clawdbot", ".moldbot"];
 
-export function checkOpenClawExists(): { found: boolean; path: string | null } {
+export function checkOpenClawExists(): {
+  found: boolean;
+  path: string | null;
+} {
   const home = adapter.homeDir();
   for (const name of OPENCLAW_DIR_NAMES) {
-    const dir = `${home}/${name}`;
+    // Use path.join so Windows gets backslash separators. Fixes HIGH
+    // review finding #2 (path-join regression from the initial refactor).
+    const dir = join(home, name);
     if (existsSync(dir)) {
       return { found: true, path: dir };
     }

@@ -73,20 +73,62 @@ describe("createProcessRunner", () => {
     });
 
     it("with a mock adapter, finds binaries in systemPathExtras", async () => {
-      // Create a temp binary file and a mock adapter whose systemPathExtras
-      // points at the temp directory. findExecutable should resolve it.
+      // Create a fake binary file (the file name adapts to the host's
+      // script extension so findExecutable picks it up on Windows too).
       const tempDir = mkdtempSync(join(tmpdir(), "pan-desktop-find-"));
-      const binPath = join(tempDir, "mockbin");
-      writeFileSync(binPath, "#!/bin/sh\nexit 0\n");
-      chmodSync(binPath, 0o755);
+      const realAdapter = createPlatformAdapter();
+      // On Windows we need an explicit extension for the file to be
+      // resolvable — pick the first non-empty candidate (.exe). On Unix
+      // a bare name with the exec bit is enough.
+      const suffix = realAdapter.platform === "windows" ? ".bat" : "";
+      const binName = "mockbin";
+      const binPath = join(tempDir, `${binName}${suffix}`);
+      writeFileSync(
+        binPath,
+        suffix === ".bat" ? "@echo off\r\nexit 0\r\n" : "#!/bin/sh\nexit 0\n",
+      );
+      if (realAdapter.platform !== "windows") {
+        chmodSync(binPath, 0o755);
+      }
 
       const mockAdapter = {
-        ...createPlatformAdapter(),
+        ...realAdapter,
         systemPathExtras: (): readonly string[] => [tempDir],
       };
       const mockRunner = createProcessRunner({ adapter: mockAdapter });
 
-      const found = await mockRunner.findExecutable("mockbin");
+      const found = await mockRunner.findExecutable(binName);
+      expect(found).toBe(binPath);
+    });
+
+    it("respects the injected adapter envPath, not process.env.PATH", async () => {
+      // Regression test for HIGH review finding #1. Create a temp dir
+      // with a fake binary, inject it via envPath (not systemPathExtras),
+      // and verify findExecutable reads from the adapter rather than the
+      // real process PATH.
+      const tempDir = mkdtempSync(join(tmpdir(), "pan-desktop-envpath-"));
+      const realAdapter = createPlatformAdapter();
+      const suffix = realAdapter.platform === "windows" ? ".bat" : "";
+      const binName = "injectedbin";
+      const binPath = join(tempDir, `${binName}${suffix}`);
+      writeFileSync(
+        binPath,
+        suffix === ".bat" ? "@echo off\r\nexit 0\r\n" : "#!/bin/sh\nexit 0\n",
+      );
+      if (realAdapter.platform !== "windows") {
+        chmodSync(binPath, 0o755);
+      }
+
+      // Note: envPath uses the CURRENT host's separator because the
+      // adapter we construct targets the current platform. We're only
+      // testing the "envPath is injected into findExecutable's lookup"
+      // contract, not cross-platform envPath semantics.
+      const injectedAdapter = createPlatformAdapter({
+        envPath: tempDir,
+      });
+      const injectedRunner = createProcessRunner({ adapter: injectedAdapter });
+
+      const found = await injectedRunner.findExecutable(binName);
       expect(found).toBe(binPath);
     });
   });
@@ -94,8 +136,17 @@ describe("createProcessRunner", () => {
   describe("killTree()", () => {
     it("handles a pid that doesn't exist without throwing", async () => {
       // A very large pid that won't exist on any real system.
-      // killTree should resolve cleanly (no process to kill).
-      await expect(runner.killTree(99999999)).resolves.toBeUndefined();
+      // killTree should resolve QUICKLY (short-circuit via the ESRCH/
+      // "not found" detection) rather than waiting out the grace period.
+      // Pass a short graceMs so the test fails fast if that branch breaks.
+      const start = Date.now();
+      await expect(
+        runner.killTree(99999999, { graceMs: 10000 }),
+      ).resolves.toBeUndefined();
+      const elapsed = Date.now() - start;
+      // Should be well under 1 second — if the ESRCH detection didn't
+      // fire we'd be waiting the full graceMs + SIGKILL round trip.
+      expect(elapsed).toBeLessThan(2000);
     });
 
     it("kills a real child process spawned via spawnStreaming", async () => {

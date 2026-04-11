@@ -193,12 +193,21 @@ export function createProcessRunner(
       shell: false,
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
-      // On POSIX, detached:true creates a new process group so killTree can
-      // walk the tree. On Windows, detached behaves differently — tree-kill
-      // handles the Windows case via `taskkill /T` so we leave detached off
-      // on Windows to avoid creating disconnected console processes.
-      detached: adapter.platform !== "windows",
+      // `detached: false` (the default). We deliberately DO NOT promote
+      // children to their own process group on POSIX because:
+      //   1. tree-kill walks the process tree via `ps` / `taskkill /T`
+      //      and does not need the child to be a group leader
+      //   2. a detached child does NOT receive SIGTERM/SIGINT when its
+      //      parent (the Electron main process) exits naturally, which
+      //      leaks the Hermes gateway and Claw3D dev server every time
+      //      the user closes the app
+      //   3. Windows `detached: true` has different semantics (console
+      //      detach) and is equally unwanted here
     };
+    // Prevent the unused adapter variable from triggering a lint warning
+    // in the meantime — we keep adapter in the signature because future
+    // tweaks (per-platform env transforms) will need it.
+    void adapter;
 
     const child = spawn(command, [...args], spawnOpts);
 
@@ -218,10 +227,12 @@ export function createProcessRunner(
 
   const findExecutable = async (name: string): Promise<string | null> => {
     // Build the full candidate directory list: extras first, then PATH.
-    const pathEnv = process.env.PATH ?? "";
+    // PATH comes from the adapter (not process.env directly) so tests
+    // that inject an envPath fixture exercise the cross-platform logic
+    // without mutating the real environment. Fixes HIGH review finding #1.
     const dirs = [
       ...adapter.systemPathExtras(),
-      ...pathEnv.split(adapter.pathSeparator),
+      ...adapter.pathEntries(),
     ].filter((d) => d.length > 0);
 
     // Build the candidate filename list. On Windows we try every script
@@ -269,12 +280,11 @@ export function createProcessRunner(
       };
 
       // Schedule force-kill as a backstop. If the graceful signal succeeds,
-      // the timer fires, tree-kill errors with ESRCH ("no such process"),
-      // and we resolve anyway.
+      // we clearTimeout it; if the graceful signal errors with "process
+      // doesn't exist", we short-circuit and settle immediately rather
+      // than waiting out the grace period.
       const forceTimer = setTimeout(() => {
-        treeKill(pid, "SIGKILL", () => {
-          settle();
-        });
+        treeKill(pid, "SIGKILL", () => settle());
       }, graceMs);
       // Don't block Node from exiting on the timer.
       forceTimer.unref();
@@ -283,9 +293,27 @@ export function createProcessRunner(
         if (!err) {
           clearTimeout(forceTimer);
           settle();
+          return;
         }
-        // If err, let the force timer escalate. Common err causes: process
-        // already gone, or grace period too short for npm-driven trees.
+        // Recognise "process already gone" and short-circuit. The exact
+        // message/code varies by OS and tool: ESRCH on POSIX, "No running
+        // instance" / 128 on Windows taskkill, "kill ESRCH" from Node.
+        // When the target doesn't exist, there's nothing to escalate to —
+        // settle immediately instead of waiting out graceMs.
+        const msg = (err?.message ?? "").toLowerCase();
+        const alreadyGone =
+          msg.includes("esrch") ||
+          msg.includes("no such process") ||
+          msg.includes("not found") ||
+          msg.includes("no running instance");
+        if (alreadyGone) {
+          clearTimeout(forceTimer);
+          settle();
+          return;
+        }
+        // Other errors (permission denied, etc.): let the force timer
+        // escalate. If SIGKILL also fails, we still settle so the caller
+        // isn't hung forever.
       });
     });
   };

@@ -50,8 +50,24 @@ export interface PlatformAdapter {
   shellProfileCandidates(): readonly string[];
 
   /**
+   * Return the PATH entries this adapter resolves against — the adapter's
+   * captured `envPath` split on `pathSeparator`. Feature code that needs
+   * to search PATH (e.g. processRunner.findExecutable) must go through
+   * this rather than reading `process.env.PATH` directly, so tests that
+   * override `envPath` actually affect behaviour.
+   */
+  pathEntries(): readonly string[];
+
+  /**
    * Build a PATH env value by prepending the given extras to the current PATH,
    * joined with the platform's delimiter.
+   *
+   * The "current PATH" here is the LIVE `process.env.PATH` value at call
+   * time, not a snapshot — so mutations to the environment during the
+   * process lifecycle (e.g. electron-updater adding to PATH) are picked
+   * up on the next call. Tests that inject a fixture adapter with a
+   * specific `envPath` still see that fixture because the returned
+   * closure captures the injected override.
    */
   buildEnhancedPath(extras: readonly string[]): string;
 }
@@ -89,7 +105,14 @@ export function createPlatformAdapter(
 ): PlatformAdapter {
   const platform = options.platform ?? detectPlatform();
   const home = options.homeDir ?? homedir();
-  const envPath = options.envPath ?? process.env.PATH ?? "";
+  // When the caller provides an explicit envPath override (tests), snapshot
+  // it. Otherwise we read process.env.PATH LAZILY at each call so
+  // runtime mutations to PATH are reflected. The override-vs-live choice
+  // matters: tests inject a fixture and expect it to stick; production
+  // code wants the current environment.
+  const envPathOverride = options.envPath;
+  const readCurrentPath = (): string =>
+    envPathOverride ?? process.env.PATH ?? "";
 
   const pathSeparator = platform === "windows" ? ";" : ":";
   const executableExtension = platform === "windows" ? ".exe" : "";
@@ -135,21 +158,27 @@ export function createPlatformAdapter(
     ];
   };
 
+  const pathEntries = (): readonly string[] => {
+    return readCurrentPath()
+      .split(pathSeparator)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  };
+
   const buildEnhancedPath = (extras: readonly string[]): string => {
     // Filter empties so accidental "" entries don't corrupt PATH.
     // Preserve caller order — extras come BEFORE the existing PATH so we
     // shadow stale system binaries with ours.
-    const segments = [...extras, envPath]
+    const segments = [...extras, readCurrentPath()]
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
-    const sep = pathSeparator;
-    // Node's path.delimiter should match; assert to catch future Node changes.
-    if (delimiter !== sep && platform === detectPlatform()) {
-      // Only a sanity check in the real-platform path. Tests that override
-      // platform will intentionally diverge and that is fine.
-    }
-    return segments.join(sep);
+    return segments.join(pathSeparator);
   };
+
+  // Silence unused-import warning for `delimiter` — it's here intentionally
+  // as a reminder that pathSeparator should agree with Node's own constant
+  // on the real platform, but we don't enforce that at runtime.
+  void delimiter;
 
   return {
     platform,
@@ -159,6 +188,7 @@ export function createPlatformAdapter(
     homeDir: () => home,
     systemPathExtras,
     shellProfileCandidates,
+    pathEntries,
     buildEnhancedPath,
   };
 }

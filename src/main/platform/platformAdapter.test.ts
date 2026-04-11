@@ -53,6 +53,13 @@ describe("createPlatformAdapter", () => {
       );
     });
 
+    it("pathEntries returns the adapter's envPath split on ';'", () => {
+      expect([...adapter.pathEntries()]).toEqual([
+        "C:\\Windows\\system32",
+        "C:\\Users\\test\\bin",
+      ]);
+    });
+
     it("buildEnhancedPath drops empty segments", () => {
       const result = adapter.buildEnhancedPath(["", "C:\\good", ""]);
       expect(result).toBe(
@@ -106,6 +113,10 @@ describe("createPlatformAdapter", () => {
     it("buildEnhancedPath joins with colons", () => {
       const result = adapter.buildEnhancedPath(["/opt/extra"]);
       expect(result).toBe("/opt/extra:/usr/bin:/bin");
+    });
+
+    it("pathEntries returns the adapter's envPath split on ':'", () => {
+      expect([...adapter.pathEntries()]).toEqual(["/usr/bin", "/bin"]);
     });
   });
 
