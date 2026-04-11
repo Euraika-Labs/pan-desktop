@@ -1,17 +1,43 @@
 # Pan Desktop — code-signing cert acquisition runbook
 
-This is the checklist for acquiring, installing, and activating the
-Windows code-signing certificate that will sign Pan Desktop M1.1 and
-later releases.
+> ## ⚠ STATUS: ARCHIVED — Pan Desktop ships unsigned indefinitely
+>
+> This runbook is preserved for historical reference but **not currently
+> actionable**. On 2026-04-12 the maintainer decided to ship Pan Desktop
+> unsigned indefinitely rather than pay recurring cert fees for a
+> pre-1.0 open-source project. The SmartScreen "Unknown publisher" dialog
+> is now a permanent part of the install UX, documented in the root
+> README's "Windows SmartScreen notice" section.
+>
+> **If you are considering reactivating this runbook**, note that the
+> electron-builder config snippets below use the obsolete `win.sign` +
+> `certificateFile` pattern which does not work with the 2023 hardware
+> token mandate. Any reactivation must first rewrite Phase 3/4 to use
+> SSL.com eSigner + `CodeSignTool` via a `win.signtoolOptions.sign`
+> custom hook. See 2026-04-12 research notes for the replacement
+> pattern.
+>
+> **Free alternative considered but not pursued**: SignPath Foundation
+> offers free code signing to qualifying OSS projects. Eligibility is
+> plausible for Pan Desktop but the application review + SmartScreen
+> reputation build still takes 4-6 weeks, and the signing CN would be
+> "SignPath Foundation" rather than "Euraika Labs". Not worth the
+> coordination overhead for the current user base.
 
-Pan Desktop M1 ships **unsigned** by deliberate decision (see
-`DECISIONS_M1.md` §4 — Path A). That means first-run users hit a
-SmartScreen "Unknown publisher" warning. The cert work in this runbook
-lifts that warning for M1.1.
+---
 
-This is a multi-step, multi-day process with external vendor dependencies.
-Start it **now**, not when M1.1 development begins — vetting can take
-days to weeks.
+## Historical runbook (do not execute without updating first)
+
+This was the checklist for acquiring, installing, and activating a
+Windows code-signing certificate. It was written under the original
+M1 plan which assumed M1.1 would ship signed. That assumption was
+reversed on 2026-04-12.
+
+Pan Desktop ships **unsigned** by deliberate decision. First-run users
+hit a SmartScreen "Unknown publisher" warning which they click past.
+
+This was originally framed as a multi-step, multi-day process with
+external vendor dependencies — accurate, but no longer urgent.
 
 ## TL;DR
 
