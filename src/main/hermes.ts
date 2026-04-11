@@ -323,7 +323,8 @@ function sendMessageViaCli(
   const mc = getModelConfig(profile);
   const profileEnv = readEnv(profile);
 
-  const args = [runtime.hermesCli];
+  const cmd = runtime.buildCliCmd();
+  const args = [...cmd.args];
   if (profile && profile !== "default") {
     args.push("-p", profile);
   }
@@ -408,7 +409,7 @@ function sendMessageViaCli(
   let outputBuffer = "";
   let stderrBuffer = "";
 
-  const proc = processRunner.spawnStreaming(runtime.pythonExe, args, {
+  const proc = processRunner.spawnStreaming(cmd.command, args, {
     cwd: runtime.hermesRepo,
     env,
     onStdout: (text) => {
@@ -572,9 +573,10 @@ export function startGateway(profile?: string): boolean {
   // detached so it survives the desktop app closing. Using stdio: "ignore"
   // fully disconnects the child from the parent console so closing the
   // Electron main process doesn't take the gateway down with it.
+  const gatewayCmd = runtime.buildCliCmd();
   gatewayProcess = processRunner.spawnStreaming(
-    runtime.pythonExe,
-    [runtime.hermesCli, "gateway"],
+    gatewayCmd.command,
+    [...gatewayCmd.args, "gateway"],
     {
       cwd: runtime.hermesRepo,
       env: gatewayEnv,

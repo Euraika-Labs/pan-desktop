@@ -57,6 +57,15 @@ export interface RuntimePaths {
    */
   readonly hermesCli: string;
 
+  /** Filesystem path whose presence indicates the CLI is invokable here. */
+  readonly cliProbePath: string;
+
+  /**
+   * Get the command and args to invoke the Hermes CLI.
+   * On Windows, uses `python -m hermes` to bypass bash wrappers.
+   */
+  buildCliCmd(): { command: string; args: string[] };
+
   /** Pan Desktop's .env file for the Hermes Agent. */
   readonly envFile: string;
 
@@ -143,19 +152,26 @@ function resolvePythonExe(venvDir: string, adapter: PlatformAdapter): string {
 }
 
 /**
- * Resolve the canonical Hermes Agent home directory. On Windows this lives
- * in %LOCALAPPDATA%\hermes to match Windows conventions for per-user
- * application data. On Unix we keep `~/.hermes` for backward compatibility
- * with existing installs.
+ * Resolve the canonical Hermes Agent home directory. On Windows we prefer
+ * %LOCALAPPDATA%\hermes, but we still detect a pre-existing ~/.hermes
+ * install so an app session can recover from legacy/manual Git Bash
+ * installs without changing the canonical write target.
  */
 function resolveHermesHome(adapter: PlatformAdapter): string {
   if (adapter.platform === "windows") {
     const localAppData = process.env.LOCALAPPDATA;
-    if (localAppData) {
-      return join(localAppData, "hermes");
+    const canonicalHome = localAppData
+      ? join(localAppData, "hermes")
+      : join(adapter.homeDir(), "AppData", "Local", "hermes");
+    const legacyHome = join(adapter.homeDir(), ".hermes");
+
+    if (existsSync(canonicalHome)) {
+      return canonicalHome;
     }
-    // Fallback: %USERPROFILE%\AppData\Local\hermes
-    return join(adapter.homeDir(), "AppData", "Local", "hermes");
+    if (existsSync(legacyHome)) {
+      return legacyHome;
+    }
+    return canonicalHome;
   }
   // macOS and Linux: ~/.hermes
   return join(adapter.homeDir(), ".hermes");
@@ -178,6 +194,26 @@ export function getRuntimePaths(adapter: PlatformAdapter): RuntimePaths {
   const configFile = join(hermesHome, "config.yaml");
   const profilesRoot = join(hermesHome, "profiles");
 
+  // Invoke the hermes console_script directly on every platform.
+  //
+  // On Windows, `pip install`/`uv pip install` generates
+  // `venv\Scripts\hermes.exe` — a tiny launcher that spawns the venv's
+  // python with the right entry point. Calling it directly is cleaner
+  // than `python -m hermes` (which FAILS on upstream Hermes Agent
+  // because the installed Python package is named `hermes_agent`, not
+  // `hermes`). On Unix, the upstream repo root ships a bash script
+  // named `hermes` that already activates the venv — hermesCli resolves
+  // to that. Uniform `command: hermesCli, args: []` works in both cases.
+  //
+  // Regression this fixes: "Hermes is installed but appears to be broken"
+  // loop on Windows (2026-04-11) — checkInstallStatus's verification was
+  // spawning `python -m hermes --version` which exits 1 with "No module
+  // named hermes", even though hermes.exe in the venv works fine.
+  const buildCliCmd = (): { command: string; args: string[] } => {
+    return { command: hermesCli, args: [] };
+  };
+  const cliProbePath = hermesCli;
+
   const profileHome = (profile?: string): string => {
     if (!profile || profile === "default") {
       return hermesHome;
@@ -192,9 +228,11 @@ export function getRuntimePaths(adapter: PlatformAdapter): RuntimePaths {
     venvBinDir,
     pythonExe,
     hermesCli,
+    cliProbePath,
     envFile,
     configFile,
     profilesRoot,
     profileHome,
+    buildCliCmd,
   };
 }

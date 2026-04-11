@@ -63,32 +63,16 @@ Copy this into an issue / comment and tick items as you go.
 - [ ] Check DevTools Console for uncaught errors / warnings
   - [ ] Paste any errors into the report
 
-## Phase 3 — Manual Hermes Agent install (via Git Bash)
+## Phase 3 — Automated Hermes Agent install (via Git Bash)
 
-This is the M1 workaround for Windows. The installer script is bash-only
-and Pan Desktop punts to Git Bash until Wave 5.
-
-- [ ] Open Git Bash (Start Menu → Git → Git Bash)
-- [ ] Run:
-      ```bash
-      curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
-      ```
+- [ ] **Expected:** Welcome screen shows "Install Hermes Agent"
+- [ ] Click "Install"
+- [ ] **Expected:** Install screen appears and shows streamed output from Git Bash
 - [ ] **Expected:** installer downloads uv, Python, clones hermes-agent,
       builds a venv, installs deps, exits 0
 - [ ] Verify Hermes Agent files exist:
       - `%LOCALAPPDATA%\hermes\hermes-agent\venv\Scripts\python.exe`
-      - `%LOCALAPPDATA%\hermes\hermes-agent\hermes` (or `.exe` / `.cmd`)
-- [ ] Switch back to Pan Desktop window
-- [ ] Click "I've installed it — check again"
-- [ ] **Expected:** Pan Desktop transitions from Welcome to the main
-      workspace (Chat / Sessions / etc.)
-
-**If the "Check again" button doesn't pick up the install:**
-- [ ] Check that `runtime.hermesCli` resolves correctly on Windows by
-      inspecting DevTools (Main process console in Electron)
-- [ ] Verify the `.exe`/`.cmd` extension resolution actually walks the
-      candidate list — see `runtime/runtimePaths.ts::resolveHermesCli`
-- [ ] This is the most likely place for Wave 4 bugs to surface
+- [ ] **Expected:** Pan Desktop transitions to Setup or Main workspace on success.
 
 ## Phase 4 — Basic chat flow
 
@@ -103,6 +87,8 @@ and Pan Desktop punts to Git Bash until Wave 5.
 - [ ] If the chat works:
   - [ ] **This is the first end-to-end Pan Desktop success on Windows.**
   - [ ] Record this as a win in the MR comment
+- [ ] **Close Pan Desktop and reopen it.**
+- [ ] **Expected:** The chat history is preserved. This verifies that `state.db` loads correctly without `better-sqlite3` native binary issues (Gap #4) and that the single-instance lock works (Gap #9).
 
 **If chat fails:**
 - [ ] Check DevTools Main process logs for the spawn call

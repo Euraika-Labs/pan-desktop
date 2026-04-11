@@ -449,6 +449,17 @@ export async function startAdapter(): Promise<boolean> {
   adapterProcess = proc;
   if (proc.pid) writePid(ADAPTER_PID_FILE, proc.pid);
 
+  proc.on("error", (err) => {
+    // Fires when spawn itself fails (ENOENT, EINVAL on Windows .cmd
+    // without shell:true, permission errors, etc). Without this
+    // handler, the 'close' event still fires but reports a naked
+    // "exited with code 1" with no log capture because stdio was
+    // never wired up. Populate adapterError with the real reason so
+    // the UI can surface it instead of the generic "code 1".
+    adapterError = `Failed to start Hermes adapter: ${err.message}`;
+    adapterLogs += `[SPAWN ERROR] ${err.message}\n`;
+  });
+
   proc.on("close", (code) => {
     if (code && code !== 0 && !adapterError) {
       adapterError = `Hermes adapter exited with code ${code}`;

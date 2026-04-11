@@ -1,6 +1,14 @@
-import { app, shell, BrowserWindow, ipcMain, Menu } from "electron";
+import {
+  app,
+  shell,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  crashReporter,
+  dialog,
+} from "electron";
 import { join } from "path";
-import { electronApp, optimizer, is } from "@electron-toolkit/utils";
+import { optimizer, is } from "@electron-toolkit/utils";
 import type { AppUpdater } from "electron-updater";
 import icon from "../../resources/icon.png?asset";
 import {
@@ -59,6 +67,7 @@ import {
   updateSessionTitle,
 } from "./session-cache";
 import { listModels, addModel, removeModel, updateModel } from "./models";
+import { fetchRemoteModels } from "./remoteModels";
 import {
   listProfiles,
   createProfile,
@@ -89,17 +98,82 @@ import {
   resumeCronJob,
   triggerCronJob,
 } from "./cronjobs";
+import { formatCrashDumpHelp, getCrashDumpsPath } from "./crashReports";
+
+// Wave 7: operational safety. Capture crash dumps locally with no upload,
+// so M1 users can attach the .dmp file to a bug report. The crashDumps
+// path override MUST be set before `crashReporter.start()` — Electron
+// captures the current value at reporter-start time, and any later
+// `app.setPath("crashDumps", ...)` would be ignored. See
+// docs/DEVELOPER_WORKFLOW.md §Collecting crash dumps from user reports.
+//
+// We also set app.name + AUMID explicitly HERE (not in whenReady) so that
+// `app.getPath("userData")` resolves to `%APPDATA%\Pan Desktop` and not
+// some package.json-derived fallback. This guarantees the dumps path
+// matches the path documented in DEVELOPER_WORKFLOW.md.
+app.setName("Pan Desktop");
+if (process.platform === "win32") {
+  app.setAppUserModelId("net.euraika.pandesktop");
+}
+app.setPath("crashDumps", join(app.getPath("userData"), "crashes"));
+crashReporter.start({
+  productName: "Pan Desktop",
+  companyName: "Euraika",
+  uploadToServer: false,
+  compress: false,
+  ignoreSystemCrashHandler: false,
+});
 
 process.on("uncaughtException", (err) => {
   console.error("[MAIN UNCAUGHT]", err);
+  if (mainWindow === null && app.isReady()) {
+    dialog.showErrorBox(
+      "Pan Desktop crashed during startup",
+      formatCrashDumpHelp(err.stack ?? err.message),
+    );
+  }
+  process.exit(1);
 });
 
 process.on("unhandledRejection", (reason) => {
   console.error("[MAIN UNHANDLED REJECTION]", reason);
+  if (mainWindow === null && app.isReady()) {
+    const message =
+      reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
+    dialog.showErrorBox(
+      "Pan Desktop failed during startup",
+      formatCrashDumpHelp(message),
+    );
+  }
 });
 
 let mainWindow: BrowserWindow | null = null;
 let currentChatAbort: (() => void) | null = null;
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+}
+
+app.on("second-instance", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    if (!mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+    mainWindow.focus();
+    return;
+  }
+  createWindow();
+});
+
+function maybeCrashForValidation(): void {
+  if (process.env.PAN_DESKTOP_CRASH_ON_STARTUP === "1") {
+    console.error("[CRASH TEST] PAN_DESKTOP_CRASH_ON_STARTUP=1");
+    process.crash();
+  }
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -131,6 +205,7 @@ function createWindow(): void {
       details.reason,
       details.exitCode,
     );
+    console.error("[CRASH] Dumps:", getCrashDumpsPath());
   });
 
   mainWindow.webContents.on(
@@ -499,6 +574,11 @@ function setupIPC(): void {
     (_event, id: string, fields: Record<string, string>) =>
       updateModel(id, fields),
   );
+  ipcMain.handle(
+    "fetch-remote-models",
+    (_event, baseUrl: string, apiKey: string | null) =>
+      fetchRemoteModels(baseUrl, apiKey),
+  );
 
   // Claw3D
   ipcMain.handle("claw3d-status", () => getClaw3dStatus());
@@ -750,8 +830,11 @@ function setupUpdater(): void {
 }
 
 app.whenReady().then(() => {
-  app.name = "Pan Desktop";
-  electronApp.setAppUserModelId("net.euraika.pandesktop");
+  // app.setName + setAppUserModelId moved to module top level (before
+  // crashReporter.start) to ensure userData path is correct. Keeping
+  // only the dev-time crash-dump log here.
+  console.info("[CRASH] Dumps:", getCrashDumpsPath());
+  maybeCrashForValidation();
 
   app.on("browser-window-created", (_, window) => {
     optimizer.watchWindowShortcuts(window);
