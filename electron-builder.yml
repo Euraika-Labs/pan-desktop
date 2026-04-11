@@ -10,8 +10,10 @@ files:
   - "!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}"
   - "!{.env,.env.*,.npmrc,pnpm-lock.yaml}"
   - "!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}"
-asarUnpack:
-  - resources/**
+# Note: no asarUnpack for resources/** — nothing under resources/ ships
+# inside app.asar. install.ps1 (the only file in resources/) is delivered
+# via extraResources below, which copies it to process.resourcesPath
+# outside the asar entirely. Closes M1.1-#006.
 extraResources:
   # Ship the vendored Hermes Agent PowerShell installer alongside the app.
   # At runtime the Windows install strategy resolves it via
