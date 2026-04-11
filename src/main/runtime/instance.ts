@@ -74,15 +74,15 @@ let _runtimeUpdate: RuntimeUpdate | null = null;
  * use it without reaching into a file that depends on them. Keeping
  * this here also avoids the circular import between installer.ts and
  * the Wave 4 runtime modules.
+ *
+ * The venv bin/Scripts path comes from `runtime.venvBinDir` (added to
+ * RuntimePaths in the Wave 4 review fix), not from an inline ternary.
+ * That way the Windows-vs-Unix split lives in exactly one place in
+ * runtimePaths.ts — see the review finding that flagged duplication.
  */
 function buildHermesEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
-  // Platform-aware venv bin/Scripts directory.
-  const venvBinDir =
-    adapter.platform === "windows"
-      ? `${runtime.venvDir}\\Scripts`
-      : `${runtime.venvDir}/bin`;
   const path = adapter.buildEnhancedPath([
-    venvBinDir,
+    runtime.venvBinDir,
     ...adapter.systemPathExtras(),
   ]);
   return {

@@ -42,6 +42,15 @@ describe("getRuntimePaths", () => {
       );
     });
 
+    it("exposes venvBinDir as a first-class field", () => {
+      // venvBinDir is the Wave-4-review addition. It must be a proper
+      // path.join (not backtick concatenation) so callers never have to
+      // guess the separator.
+      expect(paths.venvBinDir).toBe(
+        join("/home/test", ".hermes", "hermes-agent", "venv", "bin"),
+      );
+    });
+
     it("returns a hermes CLI path when no filesystem candidates exist", () => {
       // On a test host where no Hermes Agent is installed, resolveHermesCli
       // falls through to the canonical expected location. Assert the shape,
@@ -109,6 +118,13 @@ describe("getRuntimePaths", () => {
       // mistake. Check both separators.
       expect(paths.pythonExe).not.toContain("bin/python");
       expect(paths.pythonExe).not.toContain("bin\\python");
+    });
+
+    it("venvBinDir is Scripts (not bin) on Windows", () => {
+      const paths = getRuntimePaths(adapter);
+      expect(paths.venvBinDir).toContain("Scripts");
+      expect(paths.venvBinDir).not.toContain("bin");
+      expect(paths.venvBinDir.endsWith("Scripts")).toBe(true);
     });
 
     it("hermesCli canonical path uses Scripts\\hermes.exe when nothing exists", () => {

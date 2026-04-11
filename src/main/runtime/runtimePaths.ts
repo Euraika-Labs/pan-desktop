@@ -32,6 +32,15 @@ export interface RuntimePaths {
   readonly venvDir: string;
 
   /**
+   * The venv's bin/Scripts directory — where pip installs console_scripts.
+   * Needed so subprocess PATH includes `hermes`, `pip`, `uv`, etc. without
+   * feature code re-computing the Windows vs Unix split. Platform-aware:
+   *   Unix:    <venvDir>/bin
+   *   Windows: <venvDir>\Scripts
+   */
+  readonly venvBinDir: string;
+
+  /**
    * Python interpreter inside the venv. Platform-aware:
    *   Unix:    <venvDir>/bin/python
    *   Windows: <venvDir>\Scripts\python.exe
@@ -110,15 +119,27 @@ function resolveHermesCli(
 }
 
 /**
+ * The venv's bin/Scripts directory. Unix uses `bin`, Windows uses
+ * `Scripts`. Always built via `path.join` so callers never have to
+ * guess the separator.
+ */
+function resolveVenvBinDir(venvDir: string, adapter: PlatformAdapter): string {
+  return adapter.platform === "windows"
+    ? join(venvDir, "Scripts")
+    : join(venvDir, "bin");
+}
+
+/**
  * Python interpreter path inside the venv. The venv layout differs by OS:
  * Unix uses `bin/python`, Windows uses `Scripts\python.exe`. This is a
  * pure path-join (no filesystem check) because the venv is assumed present.
  */
 function resolvePythonExe(venvDir: string, adapter: PlatformAdapter): string {
+  const binDir = resolveVenvBinDir(venvDir, adapter);
   if (adapter.platform === "windows") {
-    return join(venvDir, "Scripts", `python${adapter.executableExtension}`);
+    return join(binDir, `python${adapter.executableExtension}`);
   }
-  return join(venvDir, "bin", "python");
+  return join(binDir, "python");
 }
 
 /**
@@ -150,6 +171,7 @@ export function getRuntimePaths(adapter: PlatformAdapter): RuntimePaths {
   const hermesHome = resolveHermesHome(adapter);
   const hermesRepo = join(hermesHome, "hermes-agent");
   const venvDir = join(hermesRepo, "venv");
+  const venvBinDir = resolveVenvBinDir(venvDir, adapter);
   const pythonExe = resolvePythonExe(venvDir, adapter);
   const hermesCli = resolveHermesCli(hermesRepo, adapter);
   const envFile = join(hermesHome, ".env");
@@ -167,6 +189,7 @@ export function getRuntimePaths(adapter: PlatformAdapter): RuntimePaths {
     hermesHome,
     hermesRepo,
     venvDir,
+    venvBinDir,
     pythonExe,
     hermesCli,
     envFile,

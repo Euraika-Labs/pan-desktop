@@ -104,7 +104,17 @@ export interface RuntimeUpdateDeps {
 
 class RuntimeUpdateService implements RuntimeUpdate {
   private cachedVersion: string | null = null;
-  private cachedVersionFetching = false;
+  /**
+   * Promise-based lock for `hermes --version` calls. Concurrent callers
+   * all await the same in-flight fetch instead of each spawning their
+   * own. Cleared in `finally` so the next fresh call after a failure
+   * actually re-tries (we don't negatively cache a transient failure).
+   *
+   * This replaces the old poll-every-100ms-up-to-2s pattern that could
+   * return a stale `null` when a slow `--version` invocation exceeded
+   * the 2s ceiling. See Wave 4 code review finding #1.
+   */
+  private versionPromise: Promise<string | null> | null = null;
   private readonly manifest: RuntimeManifest;
 
   constructor(private readonly deps: RuntimeUpdateDeps) {
@@ -120,40 +130,45 @@ class RuntimeUpdateService implements RuntimeUpdate {
       return null;
     }
 
-    // Guard against concurrent callers racing on the same fetch.
-    if (this.cachedVersionFetching) {
-      // Poll the cache every 100ms up to 20 times (= 2s). This is the
-      // same pattern the pre-Wave-4 installer.ts used; reused here so
-      // behavior stays identical after the refactor.
-      for (let i = 0; i < 20; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        if (!this.cachedVersionFetching) break;
-      }
-      return this.cachedVersion;
+    // Concurrent callers: return the already-in-flight promise so every
+    // caller settles on the same result at the same time.
+    if (this.versionPromise !== null) {
+      return this.versionPromise;
     }
 
-    this.cachedVersionFetching = true;
-    try {
-      const result = await this.deps.processRunner.run(
-        this.deps.runtime.pythonExe,
-        [this.deps.runtime.hermesCli, "--version"],
-        {
-          cwd: this.deps.runtime.hermesRepo,
-          env: this.deps.buildEnv(),
-          timeoutMs: 15000,
-        },
-      );
-      this.cachedVersion = result.stdout.trim();
-      return this.cachedVersion;
-    } catch {
-      return null;
-    } finally {
-      this.cachedVersionFetching = false;
-    }
+    this.versionPromise = (async () => {
+      try {
+        const result = await this.deps.processRunner.run(
+          this.deps.runtime.pythonExe,
+          [this.deps.runtime.hermesCli, "--version"],
+          {
+            cwd: this.deps.runtime.hermesRepo,
+            env: this.deps.buildEnv(),
+            timeoutMs: 15000,
+          },
+        );
+        const version = result.stdout.trim();
+        this.cachedVersion = version;
+        return version;
+      } catch {
+        // Don't negatively cache — a transient spawn failure shouldn't
+        // poison the cache forever. The next call re-tries fresh because
+        // `versionPromise` is cleared in `finally`.
+        return null;
+      } finally {
+        this.versionPromise = null;
+      }
+    })();
+
+    return this.versionPromise;
   }
 
   clearVersionCache(): void {
     this.cachedVersion = null;
+    // Also clear any in-flight promise so the next call re-fetches
+    // even if a fetch was mid-flight when the user clicked "refresh
+    // version" in Settings.
+    this.versionPromise = null;
   }
 
   async checkForUpdate(): Promise<UpdateCheckResult> {

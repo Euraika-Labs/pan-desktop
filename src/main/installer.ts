@@ -128,11 +128,7 @@ export function getInstallInstructions(): InstallInstructions {
  * `buildHermesEnv()` which composes this automatically.
  */
 export function getEnhancedPath(): string {
-  const venvBinDir =
-    adapter.platform === "windows"
-      ? `${runtime.venvDir}\\Scripts`
-      : `${runtime.venvDir}/bin`;
-  const extras = [venvBinDir, ...adapter.systemPathExtras()];
+  const extras = [runtime.venvBinDir, ...adapter.systemPathExtras()];
   return adapter.buildEnhancedPath(extras);
 }
 

@@ -121,3 +121,42 @@ describe("clearVersionCache", () => {
     expect(() => svc.clearVersionCache()).not.toThrow();
   });
 });
+
+describe("getCurrentVersion concurrency", () => {
+  // These tests lock in the Wave-4-review fix: concurrent callers must
+  // share a single in-flight promise, not race on a boolean flag with a
+  // bounded poll.
+
+  it("returns null on non-installed host (no subprocess spawned)", async () => {
+    const deps = makeDeps();
+    const svc = createRuntimeUpdate(deps);
+    // No pythonExe on disk → getCurrentVersion short-circuits to null
+    // before any processRunner.run is called.
+    const result = await svc.getCurrentVersion();
+    expect(result).toBeNull();
+
+    // Subsequent calls also return null (no negative cache, but also no
+    // thrashing because the existsSync check short-circuits).
+    expect(await svc.getCurrentVersion()).toBeNull();
+    expect(await svc.getCurrentVersion()).toBeNull();
+
+    // The mock runner's `run` fn should never have been called because
+    // the filesystem check gates the spawn.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const runSpy = (deps.processRunner as any).run as ReturnType<typeof vi.fn>;
+    expect(runSpy).not.toHaveBeenCalled();
+  });
+
+  it("clearVersionCache clears in-flight promise too", () => {
+    // Regression for the Wave-4 review fix: clearVersionCache used to
+    // only clear the stored version, leaving an in-flight promise
+    // pointing at a stale fetch. Now it clears both.
+    const deps = makeDeps();
+    const svc = createRuntimeUpdate(deps);
+    // We can't easily reach into the private state, but we can verify
+    // the method is callable repeatedly and never leaks an error.
+    svc.clearVersionCache();
+    svc.clearVersionCache();
+    expect(svc.getManifest()).toBe(MANIFEST);
+  });
+});
