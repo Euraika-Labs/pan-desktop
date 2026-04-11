@@ -7,6 +7,10 @@ import type { PlatformAdapter } from "../platform/platformAdapter";
 import type { ProcessRunner } from "../platform/processRunner";
 import type { RuntimePaths } from "./runtimePaths";
 import { stripAnsi } from "../utils";
+import {
+  applyOverlays,
+  type OverlayResult,
+} from "../services/overlayApplicator";
 
 /**
  * Wave 4: install strategy boundary.
@@ -493,9 +497,28 @@ class WindowsInstallerStrategy implements RuntimeInstaller {
       TERM: "dumb",
     });
 
-    // install.ps1 accepts -HermesHome and -InstallDir. Pan Desktop pins
-    // both to the runtimePaths-resolved locations so the install lands
-    // exactly where runtimePaths expects to find it on next launch.
+    // Resolve the pinned upstream commit SHA from the overlay manifest.
+    // install.ps1 accepts `-Ref <sha>` to check out that specific commit
+    // after clone, which guarantees the installed Python tree matches
+    // the `upstreamSha256` values in the manifest. Without this pin,
+    // every overlay would hit `drift-skipped` because install.ps1
+    // defaults to the `main` branch head.
+    //
+    // If the manifest is missing or malformed, we pass empty ref (which
+    // install.ps1 treats as "use default branch") — the overlays will
+    // then drift-skip, but the install itself still succeeds.
+    const overlayDirForManifest = app.isPackaged
+      ? join(process.resourcesPath, "overlays")
+      : join(app.getAppPath(), "resources", "overlays");
+    const pinnedRef = this.readPinnedRef(overlayDirForManifest);
+    if (pinnedRef) {
+      emit(`Pinning upstream Hermes Agent to commit ${pinnedRef.slice(0, 12)}\n`);
+    }
+
+    // install.ps1 accepts -HermesHome, -InstallDir, and -Ref. Pan Desktop
+    // pins all three to the runtimePaths-resolved locations + the
+    // manifest-declared upstream commit so the install lands exactly
+    // where runtimePaths expects it and the overlay hashes match.
     const args = [
       "-NoProfile",
       "-NoLogo",
@@ -507,6 +530,7 @@ class WindowsInstallerStrategy implements RuntimeInstaller {
       this.deps.runtime.hermesHome,
       "-InstallDir",
       this.deps.runtime.hermesRepo,
+      ...(pinnedRef ? ["-Ref", pinnedRef] : []),
     ];
 
     await new Promise<void>((resolve, reject) => {
@@ -541,6 +565,91 @@ class WindowsInstallerStrategy implements RuntimeInstaller {
         reject(new Error(`Failed to start installer: ${err.message}`));
       });
     });
+
+    // M1.1-#008 / #009: apply Pan Desktop overlays on top of the freshly
+    // installed Hermes tree. These patch the four Python files that still
+    // have Unix-only assumptions upstream missed (fcntl, AF_UNIX, /tmp).
+    // Best effort: individual overlay failures do NOT fail the install —
+    // the app still works without the patches on Windows for everything
+    // except the code-exec sandbox + memory tool, and a diagnostic is
+    // written to {hermesHome}/pan-desktop-overlays.json either way.
+    await this.applyOverlaysBestEffort(emit);
+  }
+
+  /**
+   * Best-effort read of `hermesAgentPinnedSha` from the overlay manifest.
+   * Returns empty string if the manifest is missing, malformed, or the
+   * field is absent — in that case install.ps1 falls back to its default
+   * branch and overlays will drift-skip gracefully. We never throw from
+   * here because the install succeeds even without a pin.
+   */
+  private readPinnedRef(overlayDir: string): string {
+    try {
+      const manifestPath = join(overlayDir, "manifest.json");
+      if (!existsSync(manifestPath)) return "";
+      const raw = readFileSync(manifestPath, "utf-8");
+      const parsed: unknown = JSON.parse(raw);
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        "hermesAgentPinnedSha" in parsed &&
+        typeof (parsed as { hermesAgentPinnedSha: unknown })
+          .hermesAgentPinnedSha === "string"
+      ) {
+        return (parsed as { hermesAgentPinnedSha: string })
+          .hermesAgentPinnedSha;
+      }
+      return "";
+    } catch {
+      return "";
+    }
+  }
+
+  /**
+   * Apply the post-install overlay bundle defined by `resources/overlays/
+   * manifest.json`. Wrapped in its own method so the install() branch
+   * above stays readable and the tests can exercise it in isolation if
+   * we ever need them to.
+   */
+  private async applyOverlaysBestEffort(
+    emit: (text: string) => void,
+  ): Promise<void> {
+    try {
+      const overlayDir = app.isPackaged
+        ? join(process.resourcesPath, "overlays")
+        : join(app.getAppPath(), "resources", "overlays");
+
+      const results = await applyOverlays({
+        hermesInstallDir: this.deps.runtime.hermesRepo,
+        overlayResourceDir: overlayDir,
+        stateDir: this.deps.runtime.hermesHome,
+        onProgress: (msg) => emit(`[overlay] ${msg}\n`),
+      });
+
+      const summary = results.reduce<Record<string, number>>((acc, r) => {
+        acc[r.status] = (acc[r.status] ?? 0) + 1;
+        return acc;
+      }, {});
+      emit(`[overlay] summary: ${JSON.stringify(summary)}\n`);
+
+      // If ANY overlay errored, mention it loudly in the log so a user
+      // reading the Install progress sees it — but don't throw.
+      const errored = results.filter(
+        (r: OverlayResult) => r.status === "error",
+      );
+      if (errored.length > 0) {
+        emit(
+          `[overlay] WARNING: ${errored.length} overlay(s) errored. See pan-desktop-overlays.json for details.\n`,
+        );
+      }
+    } catch (err) {
+      emit(
+        `[overlay] ERROR: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      // Intentionally do NOT rethrow — install succeeded; overlays are a
+      // best-effort improvement and we'd rather leave the user with a
+      // working-but-unpatched install than a half-broken failed install.
+    }
   }
 
   async repair(onProgress: (progress: InstallProgress) => void): Promise<void> {
