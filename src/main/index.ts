@@ -98,7 +98,11 @@ import {
   resumeCronJob,
   triggerCronJob,
 } from "./cronjobs";
-import { formatCrashDumpHelp, getCrashDumpsPath } from "./crashReports";
+import {
+  formatCrashDumpHelp,
+  getCrashDumpsPath,
+  persistCrashLog,
+} from "./crashReports";
 
 // Wave 7: operational safety. Capture crash dumps locally with no upload,
 // so M1 users can attach the .dmp file to a bug report. The crashDumps
@@ -126,17 +130,33 @@ crashReporter.start({
 
 process.on("uncaughtException", (err) => {
   console.error("[MAIN UNCAUGHT]", err);
-  if (mainWindow === null && app.isReady()) {
+  // Write a human-readable log BEFORE forcing Crashpad capture so users
+  // have something attachable to bug reports even if the minidump is
+  // unreadable without symbols. See crashReports.ts::persistCrashLog.
+  const logPath = persistCrashLog("uncaught", err);
+  if (app.isReady()) {
     dialog.showErrorBox(
-      "Pan Desktop crashed during startup",
-      formatCrashDumpHelp(err.stack ?? err.message),
+      "Pan Desktop crashed",
+      `An unexpected error occurred. A crash log has been saved to:\n\n` +
+        `${logPath}\n\n` +
+        `A binary memory dump (.dmp file) is being captured in the same ` +
+        `folder.\n\n` +
+        `Please attach BOTH files to your bug report.`,
     );
   }
-  process.exit(1);
+  // DO NOT call process.exit() — that terminates cleanly and bypasses
+  // Crashpad entirely (see Electron issue #27602). process.crash() raises
+  // a fatal fault that Crashpad's exception handler intercepts and writes
+  // as a .dmp alongside the .log we just wrote. Closes M1.1-#004.
+  process.crash();
 });
 
 process.on("unhandledRejection", (reason) => {
   console.error("[MAIN UNHANDLED REJECTION]", reason);
+  // Log rejections for diagnostics but DO NOT crash on them. Node's
+  // default behavior is to warn and continue; promoting rejections to
+  // hard crashes would be more disruptive than the original bug.
+  persistCrashLog("rejection", reason);
   if (mainWindow === null && app.isReady()) {
     const message =
       reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
