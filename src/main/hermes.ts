@@ -1,15 +1,9 @@
-import { ChildProcess, spawn } from "child_process";
 import { existsSync, readFileSync, appendFileSync } from "fs";
 import { join } from "path";
-import { homedir } from "os";
 import http from "http";
-import {
-  HERMES_HOME,
-  HERMES_REPO,
-  HERMES_PYTHON,
-  HERMES_SCRIPT,
-  getEnhancedPath,
-} from "./installer";
+import { runtime, processRunner } from "./runtime/instance";
+import type { ChildProcess } from "./platform/processRunner";
+import { buildHermesEnv } from "./installer";
 import { getModelConfig, readEnv } from "./config";
 import { stripAnsi } from "./utils";
 
@@ -59,7 +53,7 @@ function isApiServerReady(): Promise<boolean> {
 
 function ensureApiServerConfig(): void {
   try {
-    const configPath = join(HERMES_HOME, "config.yaml");
+    const configPath = join(runtime.hermesHome, "config.yaml");
     if (!existsSync(configPath)) return;
     const content = readFileSync(configPath, "utf-8");
     // If api_server is already configured, skip
@@ -329,7 +323,7 @@ function sendMessageViaCli(
   const mc = getModelConfig(profile);
   const profileEnv = readEnv(profile);
 
-  const args = [HERMES_SCRIPT];
+  const args = [runtime.hermesCli];
   if (profile && profile !== "default") {
     args.push("-p", profile);
   }
@@ -343,13 +337,14 @@ function sendMessageViaCli(
     args.push("-m", mc.model);
   }
 
-  const env: Record<string, string> = {
-    ...(process.env as Record<string, string>),
-    PATH: getEnhancedPath(),
-    HOME: homedir(),
-    HERMES_HOME: HERMES_HOME,
-    PYTHONUNBUFFERED: "1",
-  };
+  // buildHermesEnv returns NodeJS.ProcessEnv which has `string | undefined`
+  // values. Widen to a plain dict here before we start setting our own
+  // optional keys.
+  const rawEnv = buildHermesEnv({ PYTHONUNBUFFERED: "1" });
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(rawEnv)) {
+    if (typeof v === "string") env[k] = v;
+  }
 
   // Inject all API keys from the profile .env so the CLI can access them
   const KNOWN_API_KEYS = [
@@ -408,63 +403,58 @@ function sendMessageViaCli(
     delete env.OPENROUTER_BASE_URL;
   }
 
-  const proc = spawn(HERMES_PYTHON, args, {
-    cwd: HERMES_REPO,
-    env,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-
   let hasOutput = false;
   let capturedSessionId = "";
   let outputBuffer = "";
-
-  function processOutput(raw: Buffer): void {
-    const text = stripAnsi(raw.toString());
-    outputBuffer += text;
-
-    const sidMatch = outputBuffer.match(/session_id:\s*(\S+)/);
-    if (sidMatch) capturedSessionId = sidMatch[1];
-
-    const cleaned = text.replace(/session_id:\s*\S+\n?/g, "");
-    const lines = cleaned.split("\n");
-    const result: string[] = [];
-    for (const line of lines) {
-      const t = line.trim();
-      if (t && NOISE_PATTERNS.some((p) => p.test(t))) continue;
-      result.push(line);
-    }
-
-    const output = result.join("\n");
-    if (output) {
-      hasOutput = true;
-      cb.onChunk(output);
-    }
-  }
-
-  proc.stdout?.on("data", processOutput);
-
   let stderrBuffer = "";
-  proc.stderr?.on("data", (data: Buffer) => {
-    const text = stripAnsi(data.toString());
-    if (
-      !text.trim() ||
-      text.includes("UserWarning") ||
-      text.includes("FutureWarning")
-    ) {
-      return;
-    }
-    // Forward errors visibly to the chat
-    if (
-      /❌|⚠️|Error|Traceback|error|failed|denied|unauthorized|invalid/i.test(
-        text,
-      )
-    ) {
-      hasOutput = true;
-      cb.onChunk(text);
-    } else {
-      // Buffer other stderr for reporting on non-zero exit
-      stderrBuffer += text;
-    }
+
+  const proc = processRunner.spawnStreaming(runtime.pythonExe, args, {
+    cwd: runtime.hermesRepo,
+    env,
+    onStdout: (text) => {
+      const stripped = stripAnsi(text);
+      outputBuffer += stripped;
+
+      const sidMatch = outputBuffer.match(/session_id:\s*(\S+)/);
+      if (sidMatch) capturedSessionId = sidMatch[1];
+
+      const cleaned = stripped.replace(/session_id:\s*\S+\n?/g, "");
+      const lines = cleaned.split("\n");
+      const result: string[] = [];
+      for (const line of lines) {
+        const t = line.trim();
+        if (t && NOISE_PATTERNS.some((p) => p.test(t))) continue;
+        result.push(line);
+      }
+
+      const output = result.join("\n");
+      if (output) {
+        hasOutput = true;
+        cb.onChunk(output);
+      }
+    },
+    onStderr: (raw) => {
+      const text = stripAnsi(raw);
+      if (
+        !text.trim() ||
+        text.includes("UserWarning") ||
+        text.includes("FutureWarning")
+      ) {
+        return;
+      }
+      // Forward errors visibly to the chat
+      if (
+        /❌|⚠️|Error|Traceback|error|failed|denied|unauthorized|invalid/i.test(
+          text,
+        )
+      ) {
+        hasOutput = true;
+        cb.onChunk(text);
+      } else {
+        // Buffer other stderr for reporting on non-zero exit
+        stderrBuffer += text;
+      }
+    },
   });
 
   proc.on("close", (code) => {
@@ -486,10 +476,11 @@ function sendMessageViaCli(
 
   return {
     abort: () => {
-      proc.kill("SIGTERM");
-      setTimeout(() => {
-        if (!proc.killed) proc.kill("SIGKILL");
-      }, 3000);
+      // processRunner.killTree walks the whole tree with a grace period
+      // before escalating to SIGKILL. Fire-and-forget — we don't await.
+      processRunner.killTree(proc, { graceMs: 3000 }).catch(() => {
+        /* already gone or uninterruptible — nothing useful to log */
+      });
     },
   };
 }
@@ -562,29 +553,35 @@ export function startGateway(profile?: string): boolean {
   ensureInitialized();
   if (isGatewayRunning()) return false;
 
-  // Build gateway env with profile API keys
-  const gatewayEnv: Record<string, string> = {
-    ...(process.env as Record<string, string>),
-    PATH: getEnhancedPath(),
-    HOME: homedir(),
-    HERMES_HOME: HERMES_HOME,
-    API_SERVER_ENABLED: "true", // Ensure API server starts with gateway
-  };
-
-  // Inject ALL profile API keys so the gateway can authenticate with any provider.
+  // Inject ALL profile API keys so the gateway can authenticate with any
+  // provider. buildHermesEnv supplies the base PATH/HOME/HERMES_HOME; we
+  // layer the profile-specific env on top.
   const profileEnv = readEnv(profile);
+  const rawGatewayEnv = buildHermesEnv({ API_SERVER_ENABLED: "true" });
+  const gatewayEnv: Record<string, string> = {};
+  for (const [k, v] of Object.entries(rawGatewayEnv)) {
+    if (typeof v === "string") gatewayEnv[k] = v;
+  }
   for (const [key, value] of Object.entries(profileEnv)) {
     if (value) {
       gatewayEnv[key] = value;
     }
   }
 
-  gatewayProcess = spawn(HERMES_PYTHON, [HERMES_SCRIPT, "gateway"], {
-    cwd: HERMES_REPO,
-    env: gatewayEnv,
-    stdio: "ignore",
-    detached: true,
-  });
+  // The gateway is a persistent background daemon — it is INTENTIONALLY
+  // detached so it survives the desktop app closing. Using stdio: "ignore"
+  // fully disconnects the child from the parent console so closing the
+  // Electron main process doesn't take the gateway down with it.
+  gatewayProcess = processRunner.spawnStreaming(
+    runtime.pythonExe,
+    [runtime.hermesCli, "gateway"],
+    {
+      cwd: runtime.hermesRepo,
+      env: gatewayEnv,
+      stdio: "ignore",
+      detached: true,
+    },
+  );
 
   gatewayProcess.unref();
 
@@ -607,7 +604,7 @@ export function startGateway(profile?: string): boolean {
 }
 
 function readPidFile(): number | null {
-  const pidFile = join(HERMES_HOME, "gateway.pid");
+  const pidFile = join(runtime.hermesHome, "gateway.pid");
   if (!existsSync(pidFile)) return null;
   try {
     const raw = readFileSync(pidFile, "utf-8").trim();
@@ -625,16 +622,20 @@ export function stopGateway(force = false): void {
   if (!force && !gatewayStartedByApp) return;
 
   if (gatewayProcess && !gatewayProcess.killed) {
-    gatewayProcess.kill("SIGTERM");
+    // processRunner.killTree terminates the gateway + any spawned children
+    // (e.g. subagents) cross-platform. Fire-and-forget; ignore errors.
+    processRunner.killTree(gatewayProcess, { graceMs: 3000 }).catch(() => {
+      /* already gone */
+    });
     gatewayProcess = null;
   }
+  // Also kill any detached gateway recorded in the pid file. This covers
+  // the "app restarted and found a leftover daemon" case.
   const pid = readPidFile();
   if (pid) {
-    try {
-      process.kill(pid, "SIGTERM");
-    } catch {
-      // already dead
-    }
+    processRunner.killTree(pid, { graceMs: 3000 }).catch(() => {
+      /* already gone */
+    });
   }
   gatewayStartedByApp = false;
   apiServerAvailable = false;
@@ -644,12 +645,7 @@ export function isGatewayRunning(): boolean {
   if (gatewayProcess && !gatewayProcess.killed) return true;
   const pid = readPidFile();
   if (!pid) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
+  return processRunner.isProcessAlive(pid);
 }
 
 export function isApiReady(): boolean {

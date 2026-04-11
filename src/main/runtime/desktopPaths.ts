@@ -36,10 +36,16 @@ export interface DesktopPaths {
   /** Root of all desktop-owned storage. */
   readonly userData: string;
 
-  /** SQLite database used by session history + session cache. */
-  readonly stateDb: string;
-
-  /** Cached sessions JSON written by src/main/session-cache.ts. */
+  /**
+   * Cached sessions JSON written by src/main/session-cache.ts.
+   *
+   * This is genuinely desktop-owned: Pan Desktop reads the session list
+   * from Hermes Agent's state.db and materializes a small index file here
+   * for fast "recent conversations" rendering. The canonical session
+   * history itself lives in `runtime.hermesHome/state.db` because that's
+   * where Hermes Agent (the Python process) writes it — see the Wave 2
+   * correction in docs/DECISION_LOG.md.
+   */
   readonly sessionCache: string;
 
   /** Claw3D local settings directory (previously ~/.openclaw/claw3d). */
@@ -119,25 +125,19 @@ export function createDesktopPaths(
   const legacyFallback = options.legacyFallback ?? true;
 
   // For legacy fallback we need to know where the old code put things. The
-  // old code used `HERMES_HOME/state.db` etc., so reach into runtimePaths
-  // for the legacy base.
+  // old code used `HERMES_HOME/desktop/sessions.json` etc., so reach into
+  // runtimePaths for the legacy base.
   const runtime = getRuntimePaths(adapter);
   const legacyHome = runtime.hermesHome;
 
   // Canonical new locations under userData.
-  const newStateDb = join(userData, "state.db");
   const newSessionCache = join(userData, "sessions.json");
   const newClaw3dSettings = join(userData, "claw3d");
   // Logs: Electron already returns a per-app logs directory, use it as-is.
 
   // Legacy locations where the old code put the same files.
-  const legacyStateDb = join(legacyHome, "state.db");
   const legacySessionCache = join(legacyHome, "desktop", "sessions.json");
   const legacyClaw3dSettings = join(adapter.homeDir(), ".openclaw", "claw3d");
-
-  const stateDb = legacyFallback
-    ? preferNewOrFallbackLegacy(newStateDb, legacyStateDb, "state.db")
-    : newStateDb;
 
   const sessionCache = legacyFallback
     ? preferNewOrFallbackLegacy(
@@ -157,7 +157,6 @@ export function createDesktopPaths(
 
   return {
     userData,
-    stateDb,
     sessionCache,
     claw3dSettings,
     logs,

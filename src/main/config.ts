@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
-import { HERMES_HOME } from "./installer";
+import { runtime } from "./runtime/instance";
 import { profileHome, escapeRegex, safeWriteFile } from "./utils";
 
 // ── In-memory cache with TTL ─────────────────────────────
@@ -318,7 +318,12 @@ export function setPlatformEnabled(
 // ── Credential Pool (auth.json) ──────────────────────────
 
 function authFilePath(): string {
-  return join(HERMES_HOME, "auth.json");
+  // auth.json stores credential-pool entries for the desktop UI. It lives
+  // in the Hermes Agent home directory (not Pan Desktop's own userData)
+  // for backward compatibility with existing Unix users — moving it to
+  // `%APPDATA%\Pan Desktop\auth.json` would strand credentials on upgrade.
+  // Revisit during M1.1 when we introduce forced data migration.
+  return join(runtime.hermesHome, "auth.json");
 }
 
 interface CredentialEntry {

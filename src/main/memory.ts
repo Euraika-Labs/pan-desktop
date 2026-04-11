@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import Database from "better-sqlite3";
+import { runtime } from "./runtime/instance";
 import { profileHome, safeWriteFile } from "./utils";
 
 const ENTRY_DELIMITER = "\n§\n";
@@ -75,12 +76,17 @@ function serializeEntries(entries: MemoryEntry[]): string {
 // Use shared safeWriteFile from utils
 const writeFileSafe = safeWriteFile;
 
-function getSessionStats(profile?: string): {
+function getSessionStats(): {
   totalSessions: number;
   totalMessages: number;
 } {
-  const home = profileHome(profile);
-  const dbPath = join(home, "state.db");
+  // state.db is written by Hermes Agent at runtime.hermesHome/state.db and
+  // contains ALL sessions across profiles — there is NOT a separate db per
+  // profile. The pre-Wave-2 code read `profileHome(profile)/state.db`
+  // which was a misread; we now read the canonical agent-owned location.
+  // Callers used to pass a `profile` parameter to this function; it's been
+  // dropped because the underlying storage is not profile-scoped.
+  const dbPath = join(runtime.hermesHome, "state.db");
   if (!existsSync(dbPath)) return { totalSessions: 0, totalMessages: 0 };
 
   try {
@@ -122,7 +128,7 @@ export function readMemory(profile?: string): MemoryInfo {
       charCount: userFile.content.length,
       charLimit: USER_CHAR_LIMIT,
     },
-    stats: getSessionStats(profile),
+    stats: getSessionStats(),
   };
 }
 

@@ -1,11 +1,11 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { randomUUID } from "crypto";
-import { HERMES_HOME } from "./installer";
+import { runtime } from "./runtime/instance";
 import { safeWriteFile } from "./utils";
 import DEFAULT_MODELS from "./default-models";
 
-const MODELS_FILE = join(HERMES_HOME, "models.json");
+const MODELS_FILE = join(runtime.hermesHome, "models.json");
 
 export interface SavedModel {
   id: string;

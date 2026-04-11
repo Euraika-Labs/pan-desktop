@@ -24,16 +24,12 @@ describe("createDesktopPaths", () => {
     tempRoot = mkdtempSync(join(tmpdir(), "pan-desktop-test-"));
   });
 
-  // Note: we deliberately don't cleanup in afterEach because rmSync on a
-  // non-empty temp dir can race with child processes the tests spawn. The
-  // OS cleans /tmp on reboot and each test uses a unique mkdtempSync path.
-
   const linuxAdapter = createPlatformAdapter({
     platform: "linux",
     homeDir: "/home/test",
   });
 
-  it("returns the new userData path when nothing exists yet", () => {
+  it("returns new userData paths when nothing exists yet", () => {
     const userData = join(tempRoot, "userData-fresh");
     const logs = join(tempRoot, "logs-fresh");
     const paths = createDesktopPaths(linuxAdapter, {
@@ -42,37 +38,47 @@ describe("createDesktopPaths", () => {
       legacyFallback: true,
     });
     expect(paths.userData).toBe(userData);
-    expect(paths.stateDb).toBe(join(userData, "state.db"));
     expect(paths.sessionCache).toBe(join(userData, "sessions.json"));
     expect(paths.claw3dSettings).toBe(join(userData, "claw3d"));
     expect(paths.logs).toBe(logs);
   });
 
-  it("prefers the new userData path when both new and legacy exist", () => {
+  it("does NOT expose state.db — that's Hermes Agent data under runtimePaths", () => {
+    const userData = join(tempRoot, "userData-agent-separation");
+    const paths = createDesktopPaths(linuxAdapter, {
+      electronUserData: userData,
+      electronLogs: join(tempRoot, "logs"),
+      legacyFallback: false,
+    });
+    // DesktopPaths used to have a stateDb field pointing at
+    // `userData/state.db`, but Hermes Agent (the Python process) is the
+    // only writer for state.db and it writes to HERMES_HOME. Exposing a
+    // desktop-owned stateDb caused confusion; it was removed in Wave 2.
+    // Session/message reads should go through `runtime.hermesHome` directly.
+    expect(paths).not.toHaveProperty("stateDb");
+  });
+
+  it("prefers the new sessionCache path when both new and legacy exist", () => {
     const userData = join(tempRoot, "userData-coexist");
     mkdirSync(userData, { recursive: true });
-    // Create new state.db so the new-path check succeeds.
-    writeFileSync(join(userData, "state.db"), "new data");
+    writeFileSync(join(userData, "sessions.json"), "[]");
 
     const paths = createDesktopPaths(linuxAdapter, {
       electronUserData: userData,
       electronLogs: join(tempRoot, "logs"),
       legacyFallback: true,
     });
-    expect(paths.stateDb).toBe(join(userData, "state.db"));
+    expect(paths.sessionCache).toBe(join(userData, "sessions.json"));
   });
 
   it("legacyFallback: false returns new paths even when only legacy exists", () => {
-    // Adapter's hermesHome is /home/test/.hermes (not real, so nothing
-    // exists there). With legacyFallback: false, we should get the new
-    // path regardless.
     const userData = join(tempRoot, "userData-nofallback");
     const paths = createDesktopPaths(linuxAdapter, {
       electronUserData: userData,
       electronLogs: join(tempRoot, "logs"),
       legacyFallback: false,
     });
-    expect(paths.stateDb).toBe(join(userData, "state.db"));
+    expect(paths.sessionCache).toBe(join(userData, "sessions.json"));
   });
 
   it("exposes userData and logs as provided", () => {
@@ -98,10 +104,9 @@ describe("createDesktopPaths", () => {
       const paths = createDesktopPaths(windowsAdapter, {
         electronUserData: userData,
         electronLogs: logs,
-        legacyFallback: false, // avoid touching the test host's real paths
+        legacyFallback: false,
       });
       expect(paths.userData).toBe(userData);
-      expect(paths.stateDb).toContain("state.db");
       expect(paths.sessionCache).toContain("sessions.json");
       expect(paths.claw3dSettings).toContain("claw3d");
     });

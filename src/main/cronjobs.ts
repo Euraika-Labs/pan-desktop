@@ -1,8 +1,8 @@
 import { existsSync } from "fs";
 import { readFile } from "fs/promises";
 import { join } from "path";
-import { execFile } from "child_process";
-import { HERMES_HOME, HERMES_PYTHON, HERMES_SCRIPT } from "./installer";
+import { runtime, processRunner } from "./runtime/instance";
+import { buildHermesEnv } from "./installer";
 import { profileHome } from "./utils";
 
 export interface CronJob {
@@ -83,35 +83,39 @@ export async function listCronJobs(
 
 /**
  * Run a hermes cron CLI command and return the result.
+ *
+ * Goes through processRunner.run so the call uses argv (never a shell),
+ * honors the platform adapter's PATH, and has a single timeout policy.
  */
-function runCronCommand(
+async function runCronCommand(
   args: string[],
   profile?: string,
 ): Promise<{ success: boolean; output: string; error?: string }> {
-  const cliArgs = [HERMES_SCRIPT];
+  const cliArgs: string[] = [runtime.hermesCli];
   if (profile && profile !== "default") {
     cliArgs.push("-p", profile);
   }
   cliArgs.push("cron", ...args);
 
-  return new Promise((resolve) => {
-    execFile(
-      HERMES_PYTHON,
-      cliArgs,
-      { cwd: join(HERMES_HOME, "hermes-agent"), timeout: 15000 },
-      (err, stdout, stderr) => {
-        if (err) {
-          resolve({
-            success: false,
-            output: stdout || "",
-            error: stderr || err.message,
-          });
-        } else {
-          resolve({ success: true, output: stdout || "" });
-        }
-      },
-    );
-  });
+  try {
+    const result = await processRunner.run(runtime.pythonExe, cliArgs, {
+      cwd: runtime.hermesRepo,
+      env: buildHermesEnv(),
+      timeoutMs: 15000,
+    });
+    return { success: true, output: result.stdout };
+  } catch (err) {
+    const e = err as {
+      stdout?: string;
+      stderr?: string;
+      message?: string;
+    };
+    return {
+      success: false,
+      output: e.stdout ?? "",
+      error: e.stderr ?? e.message ?? "unknown error",
+    };
+  }
 }
 
 export async function createCronJob(
