@@ -132,9 +132,10 @@ async function runSkillsCommand(
   timeoutMs: number,
 ): Promise<{ success: boolean; output: string; error?: string }> {
   try {
+    const cmd = runtime.buildCliCmd();
     const result = await processRunner.run(
-      runtime.pythonExe,
-      [runtime.hermesCli, ...args],
+      cmd.command,
+      [...cmd.args, ...args],
       {
         cwd: runtime.hermesRepo,
         env: buildHermesEnv(),

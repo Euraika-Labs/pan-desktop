@@ -189,7 +189,8 @@ async function runProfileCommand(
   timeoutMs: number,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    await processRunner.run(runtime.pythonExe, [runtime.hermesCli, ...args], {
+    const cmd = runtime.buildCliCmd();
+    await processRunner.run(cmd.command, [...cmd.args, ...args], {
       cwd: runtime.hermesRepo,
       env: buildHermesEnv(),
       timeoutMs,

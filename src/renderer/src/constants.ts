@@ -79,6 +79,21 @@ export const PROVIDERS = {
       baseUrl: "http://localhost:1234/v1",
       needsKey: false,
     },
+    {
+      id: "custom-openai",
+      name: "Custom OpenAI-compatible",
+      desc: "Your own API endpoint",
+      tag: "Advanced",
+      // OPENAI_API_KEY is the standard bearer-token env var for
+      // OpenAI-compatible APIs. The key field is OPTIONAL because
+      // some self-hosted endpoints don't require auth.
+      envKey: "OPENAI_API_KEY",
+      url: "",
+      placeholder: "sk-... (leave blank if no auth)",
+      configProvider: "custom",
+      baseUrl: "",
+      needsKey: false,
+    },
   ],
 };
 

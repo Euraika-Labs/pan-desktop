@@ -45,6 +45,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify better-sqlite3 is Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $nodeFile = Get-ChildItem -Recurse -Path node_modules/better-sqlite3 -Filter "better_sqlite3.node" | Select-Object -First 1
+          if (-not $nodeFile) { throw "better_sqlite3.node not found in node_modules/better-sqlite3/" }
+          $bytes = [System.IO.File]::ReadAllBytes($nodeFile.FullName)[0..1]
+          if ($bytes[0] -eq 0x4D -and $bytes[1] -eq 0x5A) {
+            Write-Host "OK: better_sqlite3.node is PE (Windows DLL format)"
+          } else {
+            throw "FAIL: better_sqlite3.node has wrong magic bytes. Got 0x$($bytes[0].ToString('X2'))$($bytes[1].ToString('X2')), expected 0x4D5A (PE/MZ)."
+          }
+
       - name: Lint
         run: npm run lint
 

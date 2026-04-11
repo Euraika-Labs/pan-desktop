@@ -133,36 +133,68 @@ describe("UnixInstallerStrategy.prerequisites", () => {
 });
 
 describe("WindowsInstallerStrategy", () => {
-  const deps = makeDeps("windows");
-  const installer = createRuntimeInstaller(deps);
-
-  it("install() throws a clear error directing users to Git Bash / WSL", async () => {
-    await expect(installer.install(() => {})).rejects.toThrow(/Git Bash|WSL/i);
+  // Smoke-test the factory once per platform before the individual
+  // install/prerequisite cases. The per-case tests construct their own
+  // `deps` so they can swap `detectPowerShell` independently.
+  it("createRuntimeInstaller returns a usable installer for windows", () => {
+    const deps = makeDeps("windows");
+    const installer = createRuntimeInstaller(deps);
+    expect(installer).toBeDefined();
+    expect(typeof installer.install).toBe("function");
   });
 
-  it("repair() throws a clear error", async () => {
-    await expect(installer.repair(() => {})).rejects.toThrow(/Windows|repair/i);
+  // Wave 5: the Windows strategy now spawns PowerShell directly against
+  // the vendored `resources/install.ps1`. Git Bash and a user-installed
+  // Python are no longer prerequisites — `uv` inside install.ps1 handles
+  // its own Python runtime. The only hard requirement is PowerShell,
+  // which is guaranteed to exist on every supported Windows host.
+
+  it("install() throws a clear error if PowerShell is missing", async () => {
+    const d = makeDeps("windows");
+    d.adapter.detectPowerShell = vi.fn((): string | null => null);
+    const inst = createRuntimeInstaller(d);
+    await expect(inst.install(() => {})).rejects.toThrow(/PowerShell/i);
   });
 
-  it("prerequisites() checks for git and returns ok when found", async () => {
-    const depsWithGit = makeDeps("windows", {
-      findExecutable: vi.fn(async () => "C:\\Program Files\\Git\\bin\\git.exe"),
-    });
-    const installerWithGit = createRuntimeInstaller(depsWithGit);
-    const report = await installerWithGit.prerequisites();
+  it("prerequisites() returns ok when PowerShell is detected", async () => {
+    const d = makeDeps("windows");
+    d.adapter.detectPowerShell = vi.fn(
+      (): string | null =>
+        "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    );
+    const inst = createRuntimeInstaller(d);
+    const report = await inst.prerequisites();
     expect(report.ok).toBe(true);
     expect(report.missing).toEqual([]);
   });
 
-  it("prerequisites() reports git as missing when not found", async () => {
-    const depsNoGit = makeDeps("windows", {
-      findExecutable: vi.fn(async () => null),
-    });
-    const installerNoGit = createRuntimeInstaller(depsNoGit);
-    const report = await installerNoGit.prerequisites();
+  it("prerequisites() reports missing PowerShell", async () => {
+    const d = makeDeps("windows");
+    d.adapter.detectPowerShell = vi.fn((): string | null => null);
+    const inst = createRuntimeInstaller(d);
+    const report = await inst.prerequisites();
     expect(report.ok).toBe(false);
-    expect(report.missing).toContain("git");
-    expect(report.hints.git).toMatch(/Git for Windows/);
+    expect(report.missing).toContain("powershell");
+    expect(report.hints.powershell).toMatch(/PowerShell/);
+  });
+
+  it("prerequisites() does NOT require Git Bash or Python", async () => {
+    // Wave 5 invariant: Pan Desktop ships its own PowerShell installer
+    // via `resources/install.ps1`, and install.ps1 uses `uv` to manage
+    // its own Python runtime. Neither Git Bash nor a system-wide Python
+    // should be surfaced as a prerequisite on Windows.
+    const d = makeDeps("windows");
+    d.adapter.detectPowerShell = vi.fn(
+      (): string | null =>
+        "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    );
+    d.adapter.detectGitBash = vi.fn((): string | null => null);
+    d.adapter.detectPython = vi.fn((): string | null => null);
+    const inst = createRuntimeInstaller(d);
+    const report = await inst.prerequisites();
+    expect(report.ok).toBe(true);
+    expect(report.missing).not.toContain("git-bash");
+    expect(report.missing).not.toContain("python");
   });
 });
 

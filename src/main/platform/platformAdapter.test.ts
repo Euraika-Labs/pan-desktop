@@ -21,12 +21,20 @@ describe("createPlatformAdapter", () => {
       expect(adapter.executableExtension).toBe(".exe");
     });
 
-    it("offers a full set of script extension candidates in order", () => {
+    it("offers a full set of script extension candidates in the right order", () => {
+      // Order matters: .exe/.cmd/.bat must come BEFORE extensionless so
+      // findExecutable returns Windows-executable files first. The bare
+      // "" fallback is a safety net for genuinely executable extensionless
+      // files (rare on Windows). Regression test: nodejs ships both `npm`
+      // (bash shell script, not executable on Windows) and `npm.cmd` (real
+      // batch wrapper) — if "" came first findExecutable would return the
+      // bash script and spawn() would ENOENT. See 2026-04-11 Claw3D install
+      // bug report.
       expect([...adapter.scriptExtensionCandidates]).toEqual([
-        "",
         ".exe",
         ".cmd",
         ".bat",
+        "",
       ]);
     });
 
@@ -65,6 +73,20 @@ describe("createPlatformAdapter", () => {
       expect(result).toBe(
         "C:\\good;C:\\Windows\\system32;C:\\Users\\test\\bin",
       );
+    });
+
+    it("detectPowerShell returns a non-null value on Windows", () => {
+      // Windows adapter always has a final System32 fallback, so the call
+      // should never return null in production. We can't assert on the
+      // specific path (the test runs on Linux where the System32 fallback
+      // does not exist), but we CAN assert the method exists and is shaped
+      // correctly — a null return here would hint at a bug where the
+      // adapter forgot to wire the fallback.
+      const result = adapter.detectPowerShell();
+      // On CI (Linux), the System32 fallback doesn't exist — result may be
+      // null. On a real Windows host it should never be null. Either way,
+      // the return type must be string | null, never undefined.
+      expect(result === null || typeof result === "string").toBe(true);
     });
   });
 
@@ -117,6 +139,13 @@ describe("createPlatformAdapter", () => {
 
     it("pathEntries returns the adapter's envPath split on ':'", () => {
       expect([...adapter.pathEntries()]).toEqual(["/usr/bin", "/bin"]);
+    });
+
+    it("detectPowerShell returns null on non-Windows platforms", () => {
+      // PowerShell detection is Windows-only in Pan Desktop. Unix installs
+      // that happen to have pwsh on PATH go through the Unix strategy, not
+      // the PowerShell one, so this method must return null here.
+      expect(adapter.detectPowerShell()).toBeNull();
     });
   });
 

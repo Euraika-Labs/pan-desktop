@@ -40,6 +40,11 @@ function Welcome({
   }, []);
 
   const manualCommand = instructions?.manualCommand;
+  // On platforms where Pan Desktop can't install Hermes Agent itself
+  // (Windows, for M1), the user has to install manually via Git Bash
+  // and then come back. Show a "Check again" button so they have a
+  // path forward without killing and relaunching the app.
+  const showRecheckButton = instructions !== null && !instructions.supported;
 
   return (
     <div className="screen welcome-screen">
@@ -103,21 +108,36 @@ function Welcome({
             Private, powerful, and always learning.
           </p>
           {instructions?.supported ? (
-            <button
-              className="btn btn-primary welcome-button"
-              onClick={onStart}
-            >
-              Get Started
-              <ArrowRight size={16} />
-            </button>
+            <>
+              <button
+                className="btn btn-primary welcome-button"
+                onClick={onStart}
+              >
+                Get Started
+                <ArrowRight size={16} />
+              </button>
+              <p className="welcome-note">
+                This will install required components (~2 GB)
+              </p>
+            </>
+          ) : showRecheckButton ? (
+            <div className="welcome-actions">
+              <p className="welcome-subtitle">{instructions?.body}</p>
+              <button
+                className="btn btn-primary welcome-button"
+                onClick={onRecheck}
+              >
+                I&apos;ve installed it — check again
+                <Refresh size={16} />
+              </button>
+              <p className="welcome-note">
+                Pan Desktop will auto-detect Hermes Agent once the install
+                completes.
+              </p>
+            </div>
           ) : (
-            <p className="welcome-subtitle">
-              {instructions?.body ?? "Checking your platform…"}
-            </p>
+            <p className="welcome-subtitle">Checking your platform…</p>
           )}
-          <p className="welcome-note">
-            This will install required components (~2 GB)
-          </p>
         </>
       )}
     </div>

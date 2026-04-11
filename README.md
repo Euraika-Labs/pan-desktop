@@ -27,9 +27,9 @@ Pan Desktop walks through installing, configuring, and chatting with Hermes Agen
 | macOS    | `.dmg`                                                                  |
 | Linux    | `.AppImage` or `.deb`                                                   |
 
-### Windows SmartScreen notice (M1)
+### Windows SmartScreen notice
 
-Milestone 1 ships **unsigned**. When you run the installer, Windows SmartScreen will show:
+Pan Desktop ships **unsigned**. When you run the installer, Windows SmartScreen will show:
 
 > Windows protected your PC — Microsoft Defender SmartScreen prevented an unrecognized app from starting.
 
@@ -38,7 +38,11 @@ To proceed:
 1. Click **More info**
 2. Click **Run anyway**
 
-This is a one-time acceptance. M1.1 will ship code-signed and bypass this dialog. The unsigned decision is documented in `docs/DECISIONS_M1.md` (see the planning workspace at `/opt/projects/pan-desktop`).
+This is a one-time acceptance per install. After you've clicked through once, Windows remembers your choice for that specific binary.
+
+**Why unsigned?** Code signing certificates cost ~$180/year and take 1-2 weeks to acquire, and the SmartScreen reputation they build up still takes weeks of real-world downloads before the warning goes away anyway. For a small open-source project in early development, the "click past the warning" UX is an acceptable trade-off against recurring cost and operational overhead. If Pan Desktop's user base grows enough to justify signing, we'll revisit — see `docs/DECISIONS_M1.md` in the planning workspace for the decision log.
+
+Auto-update on Windows triggers a UAC prompt on each update for the same reason — `electron-updater` can only apply updates silently when the new installer's Authenticode signature matches the installed version. Unsigned means the OS re-prompts you every time.
 
 ### macOS
 

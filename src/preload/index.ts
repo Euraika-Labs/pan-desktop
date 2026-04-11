@@ -393,6 +393,12 @@ const hermesAPI = {
   updateModel: (id: string, fields: Record<string, string>): Promise<boolean> =>
     ipcRenderer.invoke("update-model", id, fields),
 
+  fetchRemoteModels: (
+    baseUrl: string,
+    apiKey: string | null,
+  ): Promise<{ ok: boolean; models: string[]; error?: string }> =>
+    ipcRenderer.invoke("fetch-remote-models", baseUrl, apiKey),
+
   // Claw3D
   claw3dStatus: (): Promise<{
     cloned: boolean;

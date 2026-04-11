@@ -161,23 +161,47 @@ export function createProcessRunner(
   const DEFAULT_MAX_BUFFER = 10 * 1024 * 1024;
   const DEFAULT_KILL_GRACE_MS = 5000;
 
+  // Windows: Node.js CVE-2024-27980 (fixed in 18.20.2+/20.12.2+/21.7.3+)
+  // blocks direct spawn/execFile of .cmd and .bat files with EINVAL — you
+  // MUST go through the shell. This helper returns true when the command
+  // needs shell:true to dispatch correctly. We only apply it on Windows
+  // and only to .cmd/.bat files, so the shell attack surface is limited
+  // to those two extensions. Args must not contain attacker-controlled
+  // shell metacharacters; all current callers pass hardcoded strings.
+  const needsShellForCmd = (command: string): boolean => {
+    if (adapter.platform !== "windows") return false;
+    return /\.(cmd|bat)$/i.test(command);
+  };
+
+  // When shell:true is active, wrap the command path in double quotes so
+  // paths with spaces (e.g. `C:\Program Files\nodejs\npm.cmd`) survive
+  // cmd.exe word-splitting. Node passes the whole string to cmd.exe /d /s /c.
+  const quoteForShell = (command: string): string => {
+    if (command.startsWith('"') && command.endsWith('"')) return command;
+    return `"${command}"`;
+  };
+
   const run = (
     command: string,
     args: readonly string[],
     opts: RunOptions = {},
   ): Promise<RunResult> => {
     return new Promise((resolve, reject) => {
+      const useShell = needsShellForCmd(command);
       const execOpts: ExecFileOptions = {
         cwd: opts.cwd,
         env: opts.env,
         timeout: opts.timeoutMs,
         maxBuffer: opts.maxBuffer ?? DEFAULT_MAX_BUFFER,
-        // Never `shell: true`. No interpolation through a shell.
-        shell: false,
+        // shell:false is the default. We flip to true ONLY for .cmd/.bat
+        // on Windows because Node's CVE-2024-27980 fix refuses to spawn
+        // those directly. See needsShellForCmd above.
+        shell: useShell,
         windowsHide: true,
       };
 
-      execFile(command, [...args], execOpts, (err, stdout, stderr) => {
+      const execCommand = useShell ? quoteForShell(command) : command;
+      execFile(execCommand, [...args], execOpts, (err, stdout, stderr) => {
         const stdoutStr =
           typeof stdout === "string" ? stdout : stdout.toString("utf8");
         const stderrStr =
@@ -226,10 +250,16 @@ export function createProcessRunner(
     // Daemon callers pass "ignore" to fully cut the cord.
     const stdio = opts.stdio ?? ["ignore", "pipe", "pipe"];
 
+    const useShell = needsShellForCmd(command);
+
     const spawnOpts: SpawnOptions = {
       cwd: opts.cwd,
       env: opts.env,
-      shell: false,
+      // shell:false is the default. We flip to true ONLY for .cmd/.bat
+      // on Windows (Node CVE-2024-27980 fix refuses to spawn those
+      // directly and throws EINVAL). All other commands stay outside
+      // the shell.
+      shell: useShell,
       windowsHide: true,
       stdio,
       // `detached` is caller-opt-in. Default false: child dies with parent
@@ -239,12 +269,9 @@ export function createProcessRunner(
       // `child.unref()` if they want Node to exit while the child runs.
       detached: opts.detached ?? false,
     };
-    // Prevent the unused adapter variable from triggering a lint warning
-    // in the meantime — we keep adapter in the signature because future
-    // tweaks (per-platform env transforms) will need it.
-    void adapter;
 
-    const child = spawn(command, [...args], spawnOpts);
+    const spawnCommand = useShell ? quoteForShell(command) : command;
+    const child = spawn(spawnCommand, [...args], spawnOpts);
 
     if (opts.onStdout) {
       child.stdout?.on("data", (chunk: Buffer) => {

@@ -91,14 +91,15 @@ async function runCronCommand(
   args: string[],
   profile?: string,
 ): Promise<{ success: boolean; output: string; error?: string }> {
-  const cliArgs: string[] = [runtime.hermesCli];
+  const cmd = runtime.buildCliCmd();
+  const cliArgs: string[] = [...cmd.args];
   if (profile && profile !== "default") {
     cliArgs.push("-p", profile);
   }
   cliArgs.push("cron", ...args);
 
   try {
-    const result = await processRunner.run(runtime.pythonExe, cliArgs, {
+    const result = await processRunner.run(cmd.command, cliArgs, {
       cwd: runtime.hermesRepo,
       env: buildHermesEnv(),
       timeoutMs: 15000,

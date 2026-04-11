@@ -34,7 +34,7 @@ import { createRuntimeUpdate, type RuntimeUpdate } from "./runtimeUpdate";
  * this singleton.
  */
 export const adapter = createPlatformAdapter();
-export const runtime = getRuntimePaths(adapter);
+export let runtime = getRuntimePaths(adapter);
 export const processRunner = createProcessRunner({ adapter });
 
 /**
@@ -68,6 +68,12 @@ export function getDesktop(): DesktopPaths {
 let _runtimeInstaller: RuntimeInstaller | null = null;
 let _runtimeUpdate: RuntimeUpdate | null = null;
 
+export function refreshRuntimeState(): void {
+  runtime = getRuntimePaths(adapter);
+  _runtimeInstaller = null;
+  _runtimeUpdate = null;
+}
+
 /**
  * Build the environment bag passed to every Hermes Agent subprocess.
  * Lifted from installer.ts's `buildHermesEnv` so runtime services can
@@ -85,13 +91,28 @@ function buildHermesEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     runtime.venvBinDir,
     ...adapter.systemPathExtras(),
   ]);
-  return {
+  const base: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: path,
     HOME: adapter.homeDir(),
     HERMES_HOME: runtime.hermesHome,
-    ...overrides,
   };
+  // Windows: force Python to use UTF-8 for stdin/stdout/stderr. Without
+  // this, the default cp1252 console encoding crashes any hermes CLI
+  // path that prints Unicode box-drawing chars or status glyphs (✓, ✗,
+  // ┌, └, etc.) — which includes `hermes doctor`, `hermes status`,
+  // `hermes gateway status`, and the banner of interactive `hermes chat`.
+  //
+  // Verified in Wave 9 probe on 2026-04-11: with these two vars unset,
+  // `hermes.exe doctor` exits 1 with UnicodeEncodeError at doctor.py:175;
+  // with them set, doctor runs to completion. PYTHONUTF8=1 is the
+  // belt-and-suspenders form of PYTHONIOENCODING — Python 3.7+ honors
+  // it as the universal "just use UTF-8 everywhere" switch.
+  if (adapter.platform === "windows") {
+    base.PYTHONIOENCODING = "utf-8";
+    base.PYTHONUTF8 = "1";
+  }
+  return { ...base, ...overrides };
 }
 
 /**

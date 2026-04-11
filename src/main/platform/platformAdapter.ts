@@ -1,5 +1,6 @@
+import { existsSync, statSync } from "fs";
 import { homedir, platform as nodePlatform } from "os";
-import { delimiter } from "path";
+import { delimiter, isAbsolute, join } from "path";
 
 /**
  * Platform identity used throughout the Pan Desktop main process.
@@ -70,6 +71,27 @@ export interface PlatformAdapter {
    * closure captures the injected override.
    */
   buildEnhancedPath(extras: readonly string[]): string;
+
+  /**
+   * Detect Git Bash on Windows. Returns the path to bash.exe if found,
+   * otherwise null. On Unix, always returns null.
+   */
+  detectGitBash(): string | null;
+
+  /**
+   * Detect Python on Windows. Filters out MS Store redirector stubs by size check.
+   * Returns the path to python.exe if found, otherwise null.
+   * On Unix, returns null.
+   */
+  detectPython(): string | null;
+
+  /**
+   * Detect PowerShell on Windows. Returns the path to pwsh.exe (PowerShell
+   * 7+) if present, otherwise powershell.exe (Windows PowerShell 5.1), with
+   * the System32 copy as a last-resort fallback because every supported
+   * Windows version ships it there. Returns null on non-Windows.
+   */
+  detectPowerShell(): string | null;
 }
 
 /**
@@ -95,6 +117,23 @@ function detectPlatform(): SupportedPlatform {
   return "linux";
 }
 
+function unique(entries: readonly string[]): string[] {
+  return [...new Set(entries.filter((entry) => entry.length > 0))];
+}
+
+function isUsableWindowsPython(path: string): boolean {
+  try {
+    const stats = statSync(path);
+    const normalized = path.toLowerCase();
+    if (normalized.includes("\\windowsapps\\")) {
+      return stats.size > 64 * 1024;
+    }
+    return stats.size > 0;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Construct a PlatformAdapter. Pass overrides to unit-test the cross-platform
  * logic on a single host. In production, main.ts calls this with no args at
@@ -116,8 +155,14 @@ export function createPlatformAdapter(
 
   const pathSeparator = platform === "windows" ? ";" : ":";
   const executableExtension = platform === "windows" ? ".exe" : "";
+  // Windows: .exe → .cmd → .bat → extensionless (last-resort).
+  // Order matters: nodejs ships both `npm` (a bash shell script with
+  // no extension that Windows can't execute) and `npm.cmd` (the real
+  // batch wrapper). If "" comes first, findExecutable returns the bash
+  // script and spawn() fails with ENOENT. Keep "" last as a safety net
+  // for genuinely executable extensionless files (rare on Windows).
   const scriptExtensionCandidates: readonly string[] =
-    platform === "windows" ? ["", ".exe", ".cmd", ".bat"] : [""];
+    platform === "windows" ? [".exe", ".cmd", ".bat", ""] : [""];
 
   const systemPathExtras = (): readonly string[] => {
     if (platform === "windows") {
@@ -165,6 +210,95 @@ export function createPlatformAdapter(
       .filter((s) => s.length > 0);
   };
 
+  const windowsSearchDirs = (): string[] => {
+    const localAppData = process.env.LOCALAPPDATA;
+    const programFiles = process.env.ProgramFiles;
+    const programFilesX86 = process.env["ProgramFiles(x86)"];
+
+    return unique([
+      ...(localAppData
+        ? [
+            join(localAppData, "Programs", "Git", "bin"),
+            join(localAppData, "Programs", "Git", "usr", "bin"),
+          ]
+        : []),
+      ...(programFiles
+        ? [
+            join(programFiles, "Git", "bin"),
+            join(programFiles, "Git", "usr", "bin"),
+          ]
+        : []),
+      ...(programFilesX86
+        ? [
+            join(programFilesX86, "Git", "bin"),
+            join(programFilesX86, "Git", "usr", "bin"),
+          ]
+        : []),
+      ...pathEntries(),
+    ]).filter((entry) => isAbsolute(entry));
+  };
+
+  const findFirstExistingFile = (
+    dirs: readonly string[],
+    fileNames: readonly string[],
+    predicate?: (path: string) => boolean,
+  ): string | null => {
+    for (const dir of dirs) {
+      for (const fileName of fileNames) {
+        const candidate = join(dir, fileName);
+        if (
+          existsSync(candidate) &&
+          isAbsolute(candidate) &&
+          (predicate ? predicate(candidate) : true)
+        ) {
+          return candidate;
+        }
+      }
+    }
+    return null;
+  };
+
+  const detectGitBash = (): string | null => {
+    if (platform !== "windows") return null;
+    return findFirstExistingFile(windowsSearchDirs(), ["bash.exe"]);
+  };
+
+  const detectPython = (): string | null => {
+    if (platform !== "windows") return null;
+    return findFirstExistingFile(
+      windowsSearchDirs(),
+      ["python3.exe", "python.exe"],
+      isUsableWindowsPython,
+    );
+  };
+
+  const detectPowerShell = (): string | null => {
+    if (platform !== "windows") return null;
+
+    // 1. PowerShell 7+ (pwsh.exe) — preferred if present, lives in PATH.
+    // 2. Windows PowerShell 5.1 (powershell.exe) — ships on every Windows 10/11
+    //    machine but may not always be first in PATH.
+    const pathHit = findFirstExistingFile(pathEntries(), [
+      "pwsh.exe",
+      "powershell.exe",
+    ]);
+    if (pathHit) return pathHit;
+
+    // 3. System32 fallback — always present on Windows, even if PATH is
+    //    pathological. This is the "defensive always-works" branch.
+    const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
+    const systemFallback = join(
+      systemRoot,
+      "System32",
+      "WindowsPowerShell",
+      "v1.0",
+      "powershell.exe",
+    );
+    if (existsSync(systemFallback)) return systemFallback;
+
+    return null;
+  };
+
   const buildEnhancedPath = (extras: readonly string[]): string => {
     // Filter empties so accidental "" entries don't corrupt PATH.
     // Preserve caller order — extras come BEFORE the existing PATH so we
@@ -190,5 +324,8 @@ export function createPlatformAdapter(
     shellProfileCandidates,
     pathEntries,
     buildEnhancedPath,
+    detectGitBash,
+    detectPython,
+    detectPowerShell,
   };
 }

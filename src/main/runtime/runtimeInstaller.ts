@@ -1,4 +1,6 @@
 import { existsSync } from "fs";
+import { join } from "path";
+import { app } from "electron";
 import type { PlatformAdapter } from "../platform/platformAdapter";
 import type { ProcessRunner } from "../platform/processRunner";
 import type { RuntimePaths } from "./runtimePaths";
@@ -173,7 +175,7 @@ class UnixInstallerStrategy implements RuntimeInstaller {
   isInstalled(): boolean {
     return (
       existsSync(this.deps.runtime.pythonExe) &&
-      existsSync(this.deps.runtime.hermesCli)
+      existsSync(this.deps.runtime.cliProbePath)
     );
   }
 
@@ -271,7 +273,7 @@ class UnixInstallerStrategy implements RuntimeInstaller {
         // looks like a successful install on disk, treat as success.
         if (
           existsSync(this.deps.runtime.pythonExe) &&
-          existsSync(this.deps.runtime.hermesCli)
+          existsSync(this.deps.runtime.cliProbePath)
         ) {
           emit(
             "\nInstall script exited with warnings, but Hermes is installed successfully.\n",
@@ -304,9 +306,10 @@ class UnixInstallerStrategy implements RuntimeInstaller {
       return "Hermes is not installed.";
     }
     try {
+      const cmd = this.deps.runtime.buildCliCmd();
       const result = await this.deps.processRunner.run(
-        this.deps.runtime.pythonExe,
-        [this.deps.runtime.hermesCli, "doctor"],
+        cmd.command,
+        [...cmd.args, "doctor"],
         {
           cwd: this.deps.runtime.hermesRepo,
           env: this.deps.buildEnv(),
@@ -339,85 +342,190 @@ class UnixInstallerStrategy implements RuntimeInstaller {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Placeholder Windows strategy. For M1 we punt on native Windows install
- * and tell users to run the upstream bash installer via Git Bash or WSL,
- * then relaunch Pan Desktop to auto-detect the install. The strategy
- * exists so the factory can pick something for Windows without throwing
- * at module-load time — the errors surface when a user actually clicks
- * "install" in the UI, not at import.
+ * Wave 5 Windows install strategy: native PowerShell, no Git Bash required.
  *
- * A real Windows installer (PowerShell-based or a bundled Python runtime
- * + venv prep) is tracked as Wave 5 / M1.1 in
- * docs/REFACTOR_ORDER_AND_WAVES.md.
+ * Pan Desktop ships the upstream Hermes Agent PowerShell installer as a
+ * vendored resource at `resources/install.ps1` (see the header comment in
+ * that file for the source commit SHA and supply-chain rationale). At
+ * install time this strategy:
+ *
+ *   1. Resolves the PowerShell host — prefers pwsh.exe (7+), falls back to
+ *      powershell.exe (5.1), with a System32 last-resort path. Detection
+ *      lives in `platformAdapter.detectPowerShell()`.
+ *   2. Resolves the vendored script path — `process.resourcesPath/install.ps1`
+ *      in packaged builds, `<repoRoot>/resources/install.ps1` in dev, via
+ *      `app.isPackaged`.
+ *   3. Spawns PowerShell with `-NoProfile -ExecutionPolicy Bypass -File
+ *      <script> -HermesHome <hermesHome> -InstallDir <hermesRepo>`. The
+ *      script uses `uv` to manage its own Python toolchain, so we no longer
+ *      need Python or Git Bash as Pan Desktop prerequisites.
+ *   4. Streams stdout/stderr through `processRunner.spawnStreaming` to the
+ *      Install screen, matching the Unix strategy's callback shape.
+ *
+ * This replaces the previous Wave 4 cop-out that spawned Git Bash to run
+ * the upstream `install.sh`. That approach was structurally broken because
+ * upstream's install.sh hard-exits on MINGW/MSYS with a redirect to
+ * install.ps1 anyway — the Git Bash dependency never bought us anything.
  */
 class WindowsInstallerStrategy implements RuntimeInstaller {
   constructor(private readonly deps: RuntimeInstallerDeps) {}
 
   isInstalled(): boolean {
-    // If someone manually ran the upstream installer via Git Bash, Hermes
-    // Agent may still be on disk at runtimePaths.pythonExe — we detect
-    // that the same way UnixInstallerStrategy does. The *install()* method
-    // is what's gated, not detection.
     return (
       existsSync(this.deps.runtime.pythonExe) &&
-      existsSync(this.deps.runtime.hermesCli)
+      existsSync(this.deps.runtime.cliProbePath)
     );
   }
 
   async prerequisites(): Promise<PrerequisiteReport> {
-    // For the "manual install via Git Bash" path, we still need git to be
-    // on PATH. When the native installer lands in M1.1 this check grows
-    // into a full prerequisite matrix (MSVC build tools, Python, node-gyp).
     const missing: string[] = [];
     const hints: Record<string, string> = {};
-    const git = await this.deps.processRunner.findExecutable("git");
-    if (!git) {
-      missing.push("git");
-      hints.git =
-        "Install Git for Windows from https://gitforwindows.org/. The bundled Git Bash is also what Hermes Agent's installer needs.";
+
+    // PowerShell is always present on every supported Windows version —
+    // System32 ships powershell.exe — so this should never fail on a real
+    // host. The defensive check exists to produce a clear error rather
+    // than a silent ENOENT if someone runs us on a Nano Server / locked
+    // down kiosk image with no PowerShell at all.
+    const pwsh = this.deps.adapter.detectPowerShell();
+    if (!pwsh) {
+      missing.push("powershell");
+      hints.powershell =
+        "Pan Desktop could not locate PowerShell (pwsh.exe or powershell.exe) on this machine. Every supported Windows version ships PowerShell 5.1 in System32 — if it is truly missing, reinstall Windows Management Framework or the relevant feature package.";
     }
+
+    // Note: we do NOT require Git Bash or a user-installed Python here.
+    // The vendored install.ps1 uses `uv` to provision its own Python
+    // runtime and clones the repo via `git` which uv itself bootstraps
+    // when missing. Keep the adapter's detectGitBash/detectPython APIs
+    // wired (runtime code may still want them) but don't gate install
+    // on either.
+
     return { ok: missing.length === 0, missing, hints };
   }
 
   async install(
     onProgress: (progress: InstallProgress) => void,
   ): Promise<void> {
-    // The progress callback is intentionally unused here — Windows install
-    // throws immediately so there's nothing to stream. We accept and
-    // ignore it so the signature matches RuntimeInstaller.install and
-    // the factory can return this strategy without type acrobatics.
-    void onProgress;
-    throw new Error(
-      "Native Windows install is not yet supported. " +
-        "Please open Git Bash (from Git for Windows) or a WSL terminal and " +
-        "run the upstream Hermes Agent installer there, then relaunch Pan " +
-        "Desktop to auto-detect the install. A native Windows installer is " +
-        "scheduled for the next milestone — see " +
-        "docs/REFACTOR_ORDER_AND_WAVES.md Wave 5.",
-    );
+    const pwsh = this.deps.adapter.detectPowerShell();
+    if (!pwsh) {
+      throw new Error(
+        "PowerShell was not found on this system. Pan Desktop requires pwsh.exe or powershell.exe to install Hermes Agent. Reinstall Windows Management Framework (WMF 5.1+) or PowerShell 7 from https://aka.ms/pwsh and try again.",
+      );
+    }
+
+    // Resolve the vendored install.ps1. In packaged builds electron-builder
+    // copies the file to `process.resourcesPath/install.ps1` via the
+    // `extraResources` entry in electron-builder.yml. In dev, the file
+    // lives at `<repoRoot>/resources/install.ps1` and `app.getAppPath()`
+    // points at the repo root.
+    const scriptPath = app.isPackaged
+      ? join(process.resourcesPath, "install.ps1")
+      : join(app.getAppPath(), "resources", "install.ps1");
+
+    if (!existsSync(scriptPath)) {
+      throw new Error(
+        `install.ps1 not found at ${scriptPath} — Pan Desktop build is corrupt. Reinstall the app from the original setup.exe and try again.`,
+      );
+    }
+
+    const totalSteps = 7;
+    let log = "";
+    let currentStep = 1;
+    let currentTitle = "Starting installation...";
+
+    const emit = (text: string): void => {
+      log += text;
+      for (const marker of UNIX_INSTALL_STAGES) {
+        if (marker.pattern.test(text)) {
+          if (marker.step >= currentStep) {
+            currentStep = marker.step;
+            currentTitle = marker.title;
+          }
+          break;
+        }
+      }
+      onProgress({
+        step: currentStep,
+        totalSteps,
+        title: currentTitle,
+        detail: text.trim().slice(0, 120),
+        log,
+      });
+    };
+
+    emit("Running vendored Hermes install.ps1 via PowerShell...\n");
+
+    // Environment for the PowerShell child. We keep the adapter's
+    // systemPathExtras on PATH so `uv`, `git`, etc. installed to the
+    // user's Scoop/cargo/pipx dirs are reachable; the installer will
+    // fall back to downloading uv if nothing is on PATH.
+    const env = this.deps.buildEnv({
+      TERM: "dumb",
+    });
+
+    // install.ps1 accepts -HermesHome and -InstallDir. Pan Desktop pins
+    // both to the runtimePaths-resolved locations so the install lands
+    // exactly where runtimePaths expects to find it on next launch.
+    const args = [
+      "-NoProfile",
+      "-NoLogo",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      scriptPath,
+      "-HermesHome",
+      this.deps.runtime.hermesHome,
+      "-InstallDir",
+      this.deps.runtime.hermesRepo,
+    ];
+
+    await new Promise<void>((resolve, reject) => {
+      const proc = this.deps.processRunner.spawnStreaming(pwsh, args, {
+        cwd: this.deps.adapter.homeDir(),
+        env,
+        onStdout: (chunk) => emit(stripAnsi(chunk)),
+        onStderr: (chunk) => emit(stripAnsi(chunk)),
+      });
+
+      proc.on("close", (code) => {
+        if (code === 0) {
+          emit("\nInstallation complete!\n");
+          resolve();
+          return;
+        }
+        if (this.looksInstalledOnDisk()) {
+          emit(
+            "\nInstall script exited with warnings, but Hermes is installed successfully.\n",
+          );
+          resolve();
+          return;
+        }
+        reject(
+          new Error(
+            `Installation failed (exit code ${code}). Check the log above for the failing step — common causes: offline network, antivirus blocking uv download, or a locked %LOCALAPPDATA%\\hermes directory from a previous install.`,
+          ),
+        );
+      });
+
+      proc.on("error", (err) => {
+        reject(new Error(`Failed to start installer: ${err.message}`));
+      });
+    });
   }
 
   async repair(onProgress: (progress: InstallProgress) => void): Promise<void> {
-    void onProgress;
-    throw new Error(
-      "Repair via Pan Desktop is not supported on Windows yet. " +
-        "Please delete %LOCALAPPDATA%\\hermes\\hermes-agent (or wherever you " +
-        "manually installed Hermes Agent) and run the upstream installer " +
-        "again from Git Bash.",
-    );
+    return this.install(onProgress);
   }
 
   async doctor(): Promise<string> {
     if (!this.isInstalled()) {
-      return (
-        "Hermes is not installed. On Windows, install Hermes Agent via Git " +
-        "Bash (from Git for Windows) and then relaunch Pan Desktop."
-      );
+      return "Hermes is not installed. Click the Install button on Pan Desktop's Welcome screen to install Hermes Agent.";
     }
     try {
+      const cmd = this.deps.runtime.buildCliCmd();
       const result = await this.deps.processRunner.run(
-        this.deps.runtime.pythonExe,
-        [this.deps.runtime.hermesCli, "doctor"],
+        cmd.command,
+        [...cmd.args, "doctor"],
         {
           cwd: this.deps.runtime.hermesRepo,
           env: this.deps.buildEnv(),
@@ -429,6 +537,19 @@ class WindowsInstallerStrategy implements RuntimeInstaller {
       const stderr = (err as { stderr?: string }).stderr ?? "";
       return stripAnsi(stderr) || "Doctor check failed.";
     }
+  }
+
+  private looksInstalledOnDisk(): boolean {
+    const canonicalPython = this.deps.runtime.pythonExe;
+    const legacyPython = join(
+      this.deps.adapter.homeDir(),
+      ".hermes",
+      "hermes-agent",
+      "venv",
+      "Scripts",
+      "python.exe",
+    );
+    return existsSync(canonicalPython) || existsSync(legacyPython);
   }
 }
 

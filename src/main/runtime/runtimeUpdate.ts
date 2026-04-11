@@ -125,7 +125,7 @@ class RuntimeUpdateService implements RuntimeUpdate {
     if (this.cachedVersion !== null) return this.cachedVersion;
     if (
       !existsSync(this.deps.runtime.pythonExe) ||
-      !existsSync(this.deps.runtime.hermesCli)
+      !existsSync(this.deps.runtime.cliProbePath)
     ) {
       return null;
     }
@@ -138,9 +138,10 @@ class RuntimeUpdateService implements RuntimeUpdate {
 
     this.versionPromise = (async () => {
       try {
+        const cmd = this.deps.runtime.buildCliCmd();
         const result = await this.deps.processRunner.run(
-          this.deps.runtime.pythonExe,
-          [this.deps.runtime.hermesCli, "--version"],
+          cmd.command,
+          [...cmd.args, "--version"],
           {
             cwd: this.deps.runtime.hermesRepo,
             env: this.deps.buildEnv(),
@@ -200,7 +201,7 @@ class RuntimeUpdateService implements RuntimeUpdate {
   ): Promise<void> {
     if (
       !existsSync(this.deps.runtime.pythonExe) ||
-      !existsSync(this.deps.runtime.hermesCli)
+      !existsSync(this.deps.runtime.cliProbePath)
     ) {
       throw new Error("Hermes is not installed. Please install it first.");
     }
@@ -220,9 +221,10 @@ class RuntimeUpdateService implements RuntimeUpdate {
     emit("Running hermes update...\n");
 
     await new Promise<void>((resolve, reject) => {
+      const cmd = this.deps.runtime.buildCliCmd();
       const proc = this.deps.processRunner.spawnStreaming(
-        this.deps.runtime.pythonExe,
-        [this.deps.runtime.hermesCli, "update"],
+        cmd.command,
+        [...cmd.args, "update"],
         {
           cwd: this.deps.runtime.hermesRepo,
           env: this.deps.buildEnv({ TERM: "dumb" }),

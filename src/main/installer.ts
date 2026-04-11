@@ -9,6 +9,7 @@ import {
   buildHermesEnv,
   getRuntimeInstaller,
   getRuntimeUpdate,
+  refreshRuntimeState,
 } from "./runtime/instance";
 
 /**
@@ -91,22 +92,20 @@ export interface InstallInstructions {
  * Return platform-appropriate install instructions for the renderer's
  * Welcome screen. Called via IPC — never import this from the renderer.
  */
-export function getInstallInstructions(): InstallInstructions {
+export async function getInstallInstructions(): Promise<InstallInstructions> {
   if (adapter.platform === "windows") {
-    // Deliberately no manualCommand. The upstream installer is bash-only
-    // and won't run under cmd.exe or PowerShell without WSL/Git Bash, so
-    // serving it as a copy-paste would mislead users. A real Windows
-    // installer lands in Wave 5 via runtimeInstaller.ts.
+    // Wave 5: always supported on Windows. Pan Desktop ships a vendored
+    // install.ps1 and runs it via PowerShell, which is guaranteed to be
+    // present on every supported Windows version. There are no manual
+    // prerequisites — `uv` handles its own Python runtime — so we do not
+    // surface a manualCommand either.
     return {
-      supported: false,
+      supported: true,
       heading: "Install Hermes Agent on Windows",
       body:
-        "Native Windows install is scheduled for the next milestone. Until " +
-        "then, open a Git Bash shell (from Git for Windows) or WSL terminal, " +
-        "run the upstream Hermes Agent installer there, then re-launch " +
-        "Pan Desktop to auto-detect the install. Pan Desktop will handle " +
-        "chat, profiles, memory and skills normally once Hermes Agent " +
-        "is on disk.",
+        "Pan Desktop will install Hermes Agent (~2 GB including a managed " +
+        "Python runtime) in a few minutes. No prerequisites needed — the " +
+        "installer downloads everything.",
     };
   }
   return {
@@ -133,6 +132,7 @@ export function getEnhancedPath(): string {
 }
 
 export async function checkInstallStatus(): Promise<InstallStatus> {
+  refreshRuntimeState();
   const installer = getRuntimeInstaller();
   const installed = installer.isInstalled();
   const configured = existsSync(runtime.envFile);
@@ -141,15 +141,12 @@ export async function checkInstallStatus(): Promise<InstallStatus> {
 
   if (installed) {
     try {
-      await processRunner.run(
-        runtime.pythonExe,
-        [runtime.hermesCli, "--version"],
-        {
-          cwd: runtime.hermesRepo,
-          env: buildHermesEnv(),
-          timeoutMs: 15000,
-        },
-      );
+      const cmd = runtime.buildCliCmd();
+      await processRunner.run(cmd.command, [...cmd.args, "--version"], {
+        cwd: runtime.hermesRepo,
+        env: buildHermesEnv(),
+        timeoutMs: 15000,
+      });
       verified = true;
     } catch {
       verified = false;
@@ -199,6 +196,7 @@ export async function checkInstallStatus(): Promise<InstallStatus> {
  * cached version.
  */
 export async function getHermesVersion(): Promise<string | null> {
+  refreshRuntimeState();
   return getRuntimeUpdate().getCurrentVersion();
 }
 
@@ -238,7 +236,7 @@ export function checkOpenClawExists(): {
 export async function runClawMigrate(
   onProgress: (progress: InstallProgress) => void,
 ): Promise<void> {
-  if (!existsSync(runtime.pythonExe) || !existsSync(runtime.hermesCli)) {
+  if (!existsSync(runtime.pythonExe) || !existsSync(runtime.cliProbePath)) {
     throw new Error("Hermes is not installed.");
   }
 
@@ -262,9 +260,10 @@ export async function runClawMigrate(
   emit(`Migrating from ${openclaw.path}...\n`);
 
   return new Promise((resolve, reject) => {
+    const cmd = runtime.buildCliCmd();
     const proc = processRunner.spawnStreaming(
-      runtime.pythonExe,
-      [runtime.hermesCli, "claw", "migrate", "--preset", "full"],
+      cmd.command,
+      [...cmd.args, "claw", "migrate", "--preset", "full"],
       {
         cwd: runtime.hermesRepo,
         env: buildHermesEnv({ TERM: "dumb" }),
@@ -305,5 +304,6 @@ export async function runHermesUpdate(
 export async function runInstall(
   onProgress: (progress: InstallProgress) => void,
 ): Promise<void> {
-  return getRuntimeInstaller().install(onProgress);
+  await getRuntimeInstaller().install(onProgress);
+  refreshRuntimeState();
 }
