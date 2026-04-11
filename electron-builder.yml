@@ -56,5 +56,5 @@ publish:
   # URL is a placeholder until GitLab Pages is enabled for the pan-desktop project.
   # Track: external unblocker #3 in DECISIONS_M1.md §9.
   provider: generic
-  url: https://pan-desktop.euraika-labs.net/releases/
+  url: https://pan-desktop.euraika.net/releases/
   channel: latest
