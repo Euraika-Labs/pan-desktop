@@ -1,0 +1,201 @@
+# Pan Desktop CI
+#
+# Wave 4 MVP (2026-04-11): minimal pages job that makes the
+# https://pan-desktop.euraika.net/releases/ URL resolve to real content
+# instead of the GitLab Pages auth redirect (which happens when no
+# deployment exists).
+#
+# Scope:
+# - `pages:` runs on every main push and publishes a stub index.html plus
+#   whatever `build:linux` produced (if a tagged release triggered it).
+# - `build:linux:` runs only on tag pushes matching v*.*.*; produces real
+#   AppImage/deb artifacts.
+# - macOS + Windows are deliberately out of scope for this MVP — they need
+#   different runner images (macos/windows) and signing certs. See DECISIONS_M1.md.
+#
+# Adding this file disables GitLab Auto DevOps for this project (by design).
+# That stops the broken `npm test` job and the docker build that Auto DevOps
+# was emitting against a non-containerized Electron app.
+
+stages:
+  - build
+  - pages
+  - post
+
+default:
+  tags: [nvme]
+  interruptible: true
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+
+workflow:
+  rules:
+    # Run on merge requests so MR pipelines exist for review
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # Run on main branch pushes (for the pages stub update)
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    # Run on semver tag pushes (for real release builds)
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/
+
+# =============================================================================
+# build:linux — produces AppImage + deb for tagged releases
+# =============================================================================
+build:linux:
+  stage: build
+  image: node:22-bookworm
+  variables:
+    CSC_IDENTITY_AUTO_DISCOVERY: "false"  # no macOS signing from Linux builds
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends rpm fuse libfuse2 || true
+  script:
+    - echo "Building Pan Desktop Linux artifacts for $CI_COMMIT_TAG"
+    - npm ci
+    - npm run build
+    - npx electron-builder --linux AppImage deb --publish never
+    - ls -la dist/
+  artifacts:
+    paths:
+      - dist/*.AppImage
+      - dist/*.deb
+      - dist/latest-linux.yml
+    expire_in: 30 days
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/
+
+# =============================================================================
+# pages — publishes release channel to https://pan-desktop.euraika.net/
+#
+# On a tagged release pipeline: picks up build:linux artifacts and serves them.
+# On a main-branch push: publishes a stub index.html so the URL resolves.
+# =============================================================================
+pages:
+  stage: pages
+  image: alpine:3.19
+  needs:
+    - job: build:linux
+      optional: true
+      artifacts: true
+  script:
+    - mkdir -p public/releases
+    - |
+      if ls dist/*.AppImage 2>/dev/null; then
+        echo "=== real release build present, publishing artifacts ==="
+        cp dist/*.AppImage dist/*.deb dist/latest-linux.yml public/releases/ 2>/dev/null || true
+        # Preserve other platforms' metadata if build:mac / build:win ever exist
+        [ -f dist/latest-mac.yml ] && cp dist/latest-mac.yml public/releases/ || true
+        [ -f dist/latest.yml ] && cp dist/latest.yml public/releases/ || true
+      else
+        echo "=== no build artifacts, publishing stub ==="
+      fi
+    - |
+      cat > public/index.html <<HTML
+      <!DOCTYPE html>
+      <html lang="en"><head>
+        <meta charset="UTF-8">
+        <title>Pan Desktop — Release Channel</title>
+        <style>body{font-family:system-ui,sans-serif;max-width:640px;margin:4rem auto;padding:0 1rem;color:#222}code{background:#f4f4f4;padding:.1rem .3rem;border-radius:3px}</style>
+      </head><body>
+        <h1>Pan Desktop</h1>
+        <p>This is the Pan Desktop release channel served by GitLab Pages for electron-updater clients.</p>
+        <p>Latest releases: <a href="/releases/">/releases/</a></p>
+        <p>Repository: <a href="https://git.euraika.net/euraika/pan-desktop">git.euraika.net/euraika/pan-desktop</a></p>
+      </body></html>
+      HTML
+    - |
+      cat > public/releases/index.html <<HTML
+      <!DOCTYPE html>
+      <html lang="en"><head><meta charset="UTF-8"><title>Pan Desktop releases</title></head>
+      <body style="font-family:system-ui,sans-serif;max-width:640px;margin:4rem auto;padding:0 1rem">
+        <h1>Pan Desktop releases</h1>
+        <p>Release artifacts ship here on tagged releases (<code>v*.*.*</code>).</p>
+        <p>electron-updater fetches <code>latest-linux.yml</code> / <code>latest-mac.yml</code> /
+           <code>latest.yml</code> from this directory to check for updates.</p>
+      </body></html>
+      HTML
+    - ls -la public/ public/releases/
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/
+
+# =============================================================================
+# auto_back_merge — propagate main commits into develop automatically
+#
+# Any push to main triggers this job, which:
+#   1. Clones develop
+#   2. Early-exits if develop is already up to date with main
+#   3. Creates a branch, merges main into it
+#   4. Pushes the branch and opens an MR targeting develop via the API
+#
+# Why this exists: MRs that land directly on main (hotfixes, Wave 4 CI, etc.)
+# skip develop and create branch skew. Git Flow standard is to back-merge
+# manually; we automate it instead.
+#
+# Requires CI/CD variable BACK_MERGE_TOKEN: a project access token with
+# `api` + `write_repository` scopes, stored masked + protected. When
+# BACK_MERGE_TOKEN is unset the job prints a warning and exits 0 (soft-skip)
+# so the pipeline stays green.
+# =============================================================================
+auto_back_merge:
+  stage: post
+  image: alpine:3.19
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  before_script:
+    - apk add --no-cache git curl jq
+  script:
+    - |
+      set -euo pipefail
+
+      if [ -z "${BACK_MERGE_TOKEN:-}" ]; then
+        echo "WARNING: BACK_MERGE_TOKEN is not set — auto-back-merge skipped."
+        echo "Create a project access token with 'api' + 'write_repository' scopes"
+        echo "and add it as a masked CI/CD variable named BACK_MERGE_TOKEN."
+        exit 0
+      fi
+
+      git config --global user.email "gitlab-ci@euraika.net"
+      git config --global user.name "Pan Desktop Auto-merge Bot"
+
+      WORK_DIR=$(mktemp -d)
+      git clone --branch develop \
+        "https://oauth2:${BACK_MERGE_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
+        "$WORK_DIR"
+      cd "$WORK_DIR"
+      git fetch origin main
+
+      COMMITS_TO_PROPAGATE=$(git rev-list --count HEAD..origin/main)
+      if [ "$COMMITS_TO_PROPAGATE" -eq 0 ]; then
+        echo "develop already contains all main commits — nothing to back-merge"
+        exit 0
+      fi
+
+      echo "Back-merging $COMMITS_TO_PROPAGATE commit(s) from main into develop"
+
+      BRANCH_NAME="auto/back-merge-main-${CI_COMMIT_SHORT_SHA}"
+      git checkout -b "$BRANCH_NAME"
+
+      if ! git merge --no-ff origin/main \
+          -m "Auto back-merge main (${CI_COMMIT_SHORT_SHA}) into develop"; then
+        echo "ERROR: back-merge has conflicts — resolve manually."
+        exit 1
+      fi
+
+      git push origin "$BRANCH_NAME"
+
+      MR_RESPONSE=$(curl -sS --fail-with-body \
+        --header "PRIVATE-TOKEN: ${BACK_MERGE_TOKEN}" \
+        --data-urlencode "source_branch=${BRANCH_NAME}" \
+        --data-urlencode "target_branch=develop" \
+        --data-urlencode "title=Auto: back-merge main ${CI_COMMIT_SHORT_SHA} into develop" \
+        --data-urlencode "description=Automated back-merge created by auto_back_merge CI job. Propagates ${COMMITS_TO_PROPAGATE} commit(s) from main into develop. Trigger: push to main at ${CI_COMMIT_SHA}." \
+        --data-urlencode "remove_source_branch=true" \
+        "https://${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/merge_requests")
+
+      MR_URL=$(echo "$MR_RESPONSE" | jq -r '.web_url')
+      echo "Back-merge MR created: $MR_URL"
