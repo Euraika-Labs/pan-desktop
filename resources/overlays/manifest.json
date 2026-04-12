@@ -68,6 +68,15 @@
       "upstreamIssue": "",
       "ticket": "M1.1-#011",
       "mode": "create"
+    },
+    {
+      "target": "gateway/platforms/api_server.py",
+      "upstreamSha256": "53b8648699a17893c064bfc45803c3f7507227ac900d281f67fbfbe80869818d",
+      "overlaySha256": "ed589e088ec7a2c8346a2ad9de5aa138d9fb58e13f352f5cfe01deec7e4c5ce1",
+      "overlayFile": "gateway/api_server.py",
+      "reason": "Wire Pan Desktop SSE approval system into the gateway: import pan_desktop_approval + pan_desktop_routes, mount /v1/approvals routes in connect(), install sync approval callback via terminal_tool.set_approval_callback() in _handle_chat_completions (streaming) and _handle_runs, restoring prior callback in finally.",
+      "upstreamIssue": "",
+      "ticket": "M1.1-#011"
     }
   ]
 }
