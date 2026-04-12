@@ -109,16 +109,19 @@ exports.default = async function afterPack(context) {
       } else {
         const manifestXml = [
           '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
-          "<assembly xmlns=\"urn:schemas-microsoft-com:asm.v1\" manifestVersion=\"1.0\">",
-          "  <application xmlns=\"urn:schemas-microsoft-com:asm.v3\">",
+          '<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">',
+          '  <application xmlns="urn:schemas-microsoft-com:asm.v3">',
           "    <windowsSettings>",
-          "      <longPathAware xmlns=\"http://schemas.microsoft.com/SMI/2016/WindowsSettings\">true</longPathAware>",
+          '      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>',
           "    </windowsSettings>",
           "  </application>",
           "</assembly>",
         ].join("\n");
 
-        const tmpManifest = path.join(os.tmpdir(), `pan-desktop-longpath-${Date.now()}.manifest`);
+        const tmpManifest = path.join(
+          os.tmpdir(),
+          `pan-desktop-longpath-${Date.now()}.manifest`,
+        );
         try {
           writeFileSync(tmpManifest, manifestXml, "utf8");
           // Resource type 24 (RT_MANIFEST), resource ID 1 (exe manifest).
@@ -126,12 +129,22 @@ exports.default = async function afterPack(context) {
             `"${mtExe}" -nologo -manifest "${tmpManifest}" -outputresource:"${exePath}";1`,
             { stdio: "inherit" },
           );
-          console.log("[afterPack] longPathAware manifest injected into", exeName);
+          console.log(
+            "[afterPack] longPathAware manifest injected into",
+            exeName,
+          );
         } catch (err) {
-          console.error("[afterPack] mt.exe manifest injection failed:", err.message);
+          console.error(
+            "[afterPack] mt.exe manifest injection failed:",
+            err.message,
+          );
           // Non-fatal: a failed injection must not break the build.
         } finally {
-          try { unlinkSync(tmpManifest); } catch { /* ignore cleanup errors */ }
+          try {
+            unlinkSync(tmpManifest);
+          } catch {
+            /* ignore cleanup errors */
+          }
         }
       }
     } else {

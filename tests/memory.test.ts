@@ -39,6 +39,7 @@ vi.mock("../src/main/runtime/instance", () => ({
 vi.mock("../src/main/utils", () => ({
   profileHome: vi.fn(() => "/fake/profile"),
   safeWriteFile: vi.fn(),
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   join: require("path").join,
 }));
 
@@ -57,15 +58,6 @@ import * as utils from "../src/main/utils";
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const DELIMITER = "\n§\n";
-
-/** Simulate a file that exists with the given content. */
-function mockFile(content: string, mtimeMs = 1_700_000_000_000): void {
-  vi.mocked(fs.existsSync).mockReturnValue(true);
-  vi.mocked(fs.readFileSync).mockReturnValue(content as unknown as Buffer);
-  vi.mocked(fs.statSync).mockReturnValue({
-    mtimeMs,
-  } as unknown as ReturnType<typeof fs.statSync>);
-}
 
 /** Simulate a file that does not exist. */
 function mockMissingFile(): void {
@@ -109,7 +101,9 @@ describe("readMemory", () => {
     vi.mocked(fs.existsSync)
       .mockReturnValueOnce(true) // MEMORY.md
       .mockReturnValueOnce(false); // USER.md
-    vi.mocked(fs.readFileSync).mockReturnValueOnce(content as unknown as Buffer);
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(
+      content as unknown as Buffer,
+    );
     vi.mocked(fs.statSync).mockReturnValueOnce({
       mtimeMs: 1_700_000_000_000,
     } as unknown as ReturnType<typeof fs.statSync>);
@@ -126,7 +120,9 @@ describe("readMemory", () => {
     vi.mocked(fs.existsSync)
       .mockReturnValueOnce(true)
       .mockReturnValueOnce(false);
-    vi.mocked(fs.readFileSync).mockReturnValueOnce(content as unknown as Buffer);
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(
+      content as unknown as Buffer,
+    );
     vi.mocked(fs.statSync).mockReturnValueOnce({
       mtimeMs: 1_700_000_000_000,
     } as unknown as ReturnType<typeof fs.statSync>);
@@ -387,8 +383,8 @@ describe("writeUserProfile", () => {
     const result = writeUserProfile(content);
     expect(result.success).toBe(true);
     expect(vi.mocked(utils.safeWriteFile)).toHaveBeenCalledOnce();
-    const [writtenPath, writtenContent] =
-      vi.mocked(utils.safeWriteFile).mock.calls[0];
+    const [writtenPath, writtenContent] = vi.mocked(utils.safeWriteFile).mock
+      .calls[0];
     expect(writtenPath).toContain("USER.md");
     expect(writtenContent).toBe(content);
   });

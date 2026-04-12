@@ -639,10 +639,8 @@ const panAPI = {
   },
 
   onUpdateError: (callback: (error: string) => void): (() => void) => {
-    const handler = (
-      _event: Electron.IpcRendererEvent,
-      error: string,
-    ): void => callback(error);
+    const handler = (_event: Electron.IpcRendererEvent, error: string): void =>
+      callback(error);
     ipcRenderer.on(UPDATE_ERROR, handler);
     return () => ipcRenderer.removeListener(UPDATE_ERROR, handler);
   },

@@ -22,10 +22,7 @@ vi.mock("../src/main/utils", () => ({
   safeWriteFile: vi.fn(),
   profileHome: vi.fn((p?: string) => (p ? `/hermes/profiles/${p}` : "/hermes")),
   join: (...args: string[]) =>
-    args
-      .join("/")
-      .replace(/\/+/g, "/")
-      .replace(/\/$/, ""),
+    args.join("/").replace(/\/+/g, "/").replace(/\/$/, ""),
 }));
 
 vi.mock("../src/main/runtime/instance", () => ({
@@ -355,7 +352,10 @@ describe("syncRemoteModels", () => {
     mockReadFileSync.mockReturnValue("[]");
     mockFetch({ models: [{ id: "alt-model", name: "Alt" }] });
 
-    const result = await syncRemoteModels("openai", "https://api.openai.com/v1");
+    const result = await syncRemoteModels(
+      "openai",
+      "https://api.openai.com/v1",
+    );
 
     expect(result[0].model).toBe("alt-model");
   });
@@ -472,7 +472,13 @@ describe("provider name round-trip", () => {
     mockReadFileSync.mockReturnValue("[]");
   });
 
-  const providerKeys = ["openrouter", "anthropic", "openai", "regolo", "custom"];
+  const providerKeys = [
+    "openrouter",
+    "anthropic",
+    "openai",
+    "regolo",
+    "custom",
+  ];
 
   for (const provider of providerKeys) {
     it(`round-trips provider key "${provider}" through add → list`, () => {

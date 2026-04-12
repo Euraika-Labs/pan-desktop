@@ -150,9 +150,7 @@ describe("readEnv()", () => {
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue("FOO=default\n");
     const result = readEnv();
-    expect(mockExistsSync).toHaveBeenCalledWith(
-      join(FAKE_HERMES_HOME, ".env"),
-    );
+    expect(mockExistsSync).toHaveBeenCalledWith(join(FAKE_HERMES_HOME, ".env"));
     expect(result.FOO).toBe("default");
   });
 
@@ -379,12 +377,7 @@ streaming: false
   it("updates provider, model, and base_url fields", () => {
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue(YAML_TEMPLATE);
-    setModelConfig(
-      "openai",
-      "gpt-4o",
-      "https://api.openai.com",
-      "sm-update-p",
-    );
+    setModelConfig("openai", "gpt-4o", "https://api.openai.com", "sm-update-p");
     const [, content] = mockSafeWriteFile.mock.calls[0] as [string, string];
     expect(content).toContain('"openai"');
     expect(content).toContain('"gpt-4o"');
@@ -457,9 +450,7 @@ describe("getHermesHome()", () => {
   });
 
   it("returns the profile subdirectory for a named profile", () => {
-    expect(getHermesHome("work")).toBe(
-      `${FAKE_HERMES_HOME}/profiles/work`,
-    );
+    expect(getHermesHome("work")).toBe(`${FAKE_HERMES_HOME}/profiles/work`);
   });
 });
 
@@ -577,9 +568,7 @@ describe("getCredentialPool()", () => {
       openai: [{ key: "sk-abc", label: "My Key" }],
     };
     mockExistsSync.mockReturnValue(true);
-    mockReadFileSync.mockReturnValue(
-      JSON.stringify({ credential_pool: pool }),
-    );
+    mockReadFileSync.mockReturnValue(JSON.stringify({ credential_pool: pool }));
     expect(getCredentialPool()).toEqual(pool);
   });
 
@@ -603,10 +592,7 @@ describe("setCredentialPool()", () => {
   it("creates auth.json with credential_pool when file does not exist", () => {
     mockExistsSync.mockReturnValue(false);
     setCredentialPool("openai", [{ key: "sk-abc", label: "My Key" }]);
-    const [path, content] = mockSafeWriteFile.mock.calls[0] as [
-      string,
-      string,
-    ];
+    const [path, content] = mockSafeWriteFile.mock.calls[0] as [string, string];
     expect(path).toBe(join(FAKE_HERMES_HOME, "auth.json"));
     const parsed = JSON.parse(content);
     expect(parsed.credential_pool.openai).toEqual([

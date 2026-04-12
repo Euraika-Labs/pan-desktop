@@ -33,7 +33,12 @@ vi.mock("./runtime/instance", () => ({
     buildCliCmd: vi.fn(() => ({ command: "hermes", args: [] })),
   },
   processRunner: {
-    run: vi.fn(async () => ({ stdout: "", stderr: "", exitCode: 0, signal: null })),
+    run: vi.fn(async () => ({
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      signal: null,
+    })),
     isProcessAlive: vi.fn(() => false),
   },
 }));
@@ -121,7 +126,10 @@ describe("listProfiles()", () => {
   });
 
   it("reads model + provider from config.yaml in hermesHome", async () => {
-    writeConfig(tempRoot, "models:\n  default: claude-3-5-sonnet\nprovider: anthropic\n");
+    writeConfig(
+      tempRoot,
+      "models:\n  default: claude-3-5-sonnet\nprovider: anthropic\n",
+    );
     const profiles = await listProfiles();
     const def = profiles.find((p) => p.name === "default")!;
     expect(def.model).toBe("claude-3-5-sonnet");
@@ -171,7 +179,10 @@ describe("listProfiles()", () => {
 
   it("includes named profiles that have config.yaml", async () => {
     const workDir = join(profilesRoot, "work");
-    writeConfig(workDir, "models:\n  default: claude-opus-4\nprovider: anthropic\n");
+    writeConfig(
+      workDir,
+      "models:\n  default: claude-opus-4\nprovider: anthropic\n",
+    );
     const profiles = await listProfiles();
     const work = profiles.find((p) => p.name === "work");
     expect(work).toBeDefined();
@@ -238,7 +249,12 @@ describe("createProfile()", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRun.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0, signal: null });
+    mockRun.mockResolvedValue({
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      signal: null,
+    });
   });
 
   it("calls processRunner.run with 'profile create <name>' args", async () => {
@@ -259,7 +275,10 @@ describe("createProfile()", () => {
   });
 
   it("returns success=false with error message when processRunner throws", async () => {
-    mockRun.mockRejectedValueOnce({ stderr: "profile already exists", message: "" });
+    mockRun.mockRejectedValueOnce({
+      stderr: "profile already exists",
+      message: "",
+    });
     const result = await createProfile("dupe", false);
     expect(result.success).toBe(false);
     expect(result.error).toContain("profile already exists");
@@ -282,7 +301,12 @@ describe("deleteProfile()", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRun.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0, signal: null });
+    mockRun.mockResolvedValue({
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      signal: null,
+    });
   });
 
   it("cannot delete the default profile", async () => {
@@ -326,7 +350,12 @@ describe("setActiveProfile()", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRun.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0, signal: null });
+    mockRun.mockResolvedValue({
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      signal: null,
+    });
   });
 
   it("calls processRunner.run with 'profile use <name>'", async () => {

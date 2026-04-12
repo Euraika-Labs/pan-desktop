@@ -35,7 +35,7 @@ export function ApprovalModal({
   useEffect(() => {
     if (!request) return;
     setPhrase("");
-  }, [request?.id]);
+  }, [request]);
 
   useEffect(() => {
     if (!request) return;
@@ -52,7 +52,7 @@ export function ApprovalModal({
         prev.focus();
       }
     };
-  }, [request?.id]);
+  }, [request]);
 
   useEffect(() => {
     if (!request) return;

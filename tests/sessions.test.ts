@@ -60,9 +60,7 @@ function execStatement(db: FakeDb, sql: string, params: unknown[]): FakeRow[] {
   const s = sql.replace(/\s+/g, " ").trim();
 
   // ── sqlite_master check for messages_fts ──
-  if (
-    /SELECT name FROM sqlite_master.*WHERE.*name.*messages_fts/i.test(s)
-  ) {
+  if (/SELECT name FROM sqlite_master.*WHERE.*name.*messages_fts/i.test(s)) {
     if (db._tables.messages_fts === null) return [];
     return [{ name: "messages_fts" }];
   }
@@ -79,7 +77,9 @@ function execStatement(db: FakeDb, sql: string, params: unknown[]): FakeRow[] {
 
   // ── getSessionMessages: SELECT from messages WHERE session_id = ? ──
   if (
-    /SELECT id, role, content, timestamp\s+FROM messages\s+WHERE session_id = \?/i.test(s)
+    /SELECT id, role, content, timestamp\s+FROM messages\s+WHERE session_id = \?/i.test(
+      s,
+    )
   ) {
     const sessionId = params[0] as string;
     const rows = db._tables.messages.filter(
@@ -127,19 +127,14 @@ function execStatement(db: FakeDb, sql: string, params: unknown[]): FakeRow[] {
       if (seen.has(msg.session_id as string)) continue;
       seen.add(msg.session_id as string);
 
-      const session = db._tables.sessions.find(
-        (s) => s.id === msg.session_id,
-      );
+      const session = db._tables.sessions.find((s) => s.id === msg.session_id);
       if (!session) continue;
 
       // Build a fake snippet with << >> markers around matched keyword
       const content = msg.content as string;
       let snippet = content;
       for (const kw of keywords) {
-        snippet = snippet.replace(
-          new RegExp(kw, "gi"),
-          (m) => `<<${m}>>`,
-        );
+        snippet = snippet.replace(new RegExp(kw, "gi"), (m) => `<<${m}>>`);
       }
       // Truncate to simulate SQLite snippet()
       if (snippet.length > 80) snippet = "..." + snippet.slice(0, 77);
@@ -180,12 +175,8 @@ let currentFakeDb: FakeDb = null!;
 // ─── Mock better-sqlite3 ──────────────────────────────────────────────────────
 
 vi.mock("better-sqlite3", () => {
-  const MockDatabase = function (
-    this: unknown,
-    _path: string,
-    _opts?: object,
-  ): FakeDb {
-    // Return the current test's fake DB (set in beforeEach)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const MockDatabase = function (this: unknown, ..._args: unknown[]): FakeDb {
     return currentFakeDb;
   };
   return { default: MockDatabase };
@@ -193,9 +184,8 @@ vi.mock("better-sqlite3", () => {
 
 // ─── Import module under test ─────────────────────────────────────────────────
 
-const { listSessions, getSessionMessages, searchSessions } = await import(
-  "../src/main/sessions"
-);
+const { listSessions, getSessionMessages, searchSessions } =
+  await import("../src/main/sessions");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -230,7 +220,7 @@ function insertSession(
     model?: string;
     title?: string | null;
   },
-) {
+): void {
   db._tables.sessions.push({
     id: row.id,
     source: row.source ?? "cli",
@@ -250,7 +240,7 @@ function insertMessage(
     content: string | null;
     timestamp: number;
   },
-) {
+): void {
   db._tables.messages.push({
     id: _nextMsgId++,
     session_id: row.session_id,
@@ -615,7 +605,10 @@ describe("searchSessions", () => {
 
   it("respects the limit parameter", () => {
     for (let i = 0; i < 5; i++) {
-      insertSession(currentFakeDb, { id: `sess-lim-${i}`, started_at: i * 100 });
+      insertSession(currentFakeDb, {
+        id: `sess-lim-${i}`,
+        started_at: i * 100,
+      });
       insertMessage(currentFakeDb, {
         session_id: `sess-lim-${i}`,
         role: "user",

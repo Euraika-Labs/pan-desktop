@@ -99,7 +99,7 @@ const mockRun = processRunner.run as ReturnType<typeof vi.fn>;
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Build a mock stat that reports isDirectory() = isDirValue */
-function fakeStat(isDir: boolean) {
+function fakeStat(isDir: boolean): { isDirectory: () => boolean } {
   return { isDirectory: () => isDir };
 }
 
@@ -299,8 +299,10 @@ description: A handy tool
     mockStatSync.mockImplementation((p: unknown) => {
       const path = String(p);
       if (path === join(skillsDir, "tools")) return fakeStat(true);
-      if (path === join(skillsDir, "tools", "README.md")) return fakeStat(false); // file, not dir
-      if (path === join(skillsDir, "tools", "real-skill")) return fakeStat(true);
+      if (path === join(skillsDir, "tools", "README.md"))
+        return fakeStat(false); // file, not dir
+      if (path === join(skillsDir, "tools", "real-skill"))
+        return fakeStat(true);
       return fakeStat(false);
     });
     mockReadFileSync.mockReturnValue(`---
@@ -712,7 +714,11 @@ describe("uninstallSkill", () => {
   });
 
   it("delegates to the hermes CLI with 'skills uninstall <name> --yes'", async () => {
-    mockRun.mockResolvedValue({ stdout: "Uninstalled", stderr: "", exitCode: 0 });
+    mockRun.mockResolvedValue({
+      stdout: "Uninstalled",
+      stderr: "",
+      exitCode: 0,
+    });
 
     const result = await uninstallSkill("task-manager");
 

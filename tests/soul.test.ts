@@ -20,6 +20,7 @@ vi.mock("fs", () => ({
 vi.mock("../src/main/utils", () => ({
   profileHome: vi.fn(() => "/fake/profile"),
   safeWriteFile: vi.fn(),
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   join: require("path").join,
 }));
 
@@ -105,8 +106,8 @@ describe("writeSoul", () => {
     const result = writeSoul(content);
     expect(result).toBe(true);
     expect(vi.mocked(utils.safeWriteFile)).toHaveBeenCalledOnce();
-    const [writtenPath, writtenContent] =
-      vi.mocked(utils.safeWriteFile).mock.calls[0];
+    const [writtenPath, writtenContent] = vi.mocked(utils.safeWriteFile).mock
+      .calls[0];
     expect(writtenPath).toBe(SOUL_PATH);
     expect(writtenContent).toBe(content);
   });
@@ -154,8 +155,8 @@ describe("resetSoul", () => {
   it("persists the default template via safeWriteFile", () => {
     resetSoul();
     expect(vi.mocked(utils.safeWriteFile)).toHaveBeenCalledOnce();
-    const [writtenPath, writtenContent] =
-      vi.mocked(utils.safeWriteFile).mock.calls[0];
+    const [writtenPath, writtenContent] = vi.mocked(utils.safeWriteFile).mock
+      .calls[0];
     expect(writtenPath).toBe(SOUL_PATH);
     expect(writtenContent).toBe(DEFAULT_SOUL);
   });
