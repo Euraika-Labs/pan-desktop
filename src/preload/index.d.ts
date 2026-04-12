@@ -77,6 +77,23 @@ interface PanAPI {
   ) => () => void;
   onChatError: (callback: (error: string) => void) => () => void;
 
+  // Approval
+  onChatApprovalRequest: (
+    callback: (request: {
+      id: string;
+      level: 1 | 2;
+      command: string;
+      patternKey: string;
+      description: string;
+      reason: string;
+    }) => void,
+  ) => () => void;
+  approvalRespond: (
+    approvalId: string,
+    response: "approved" | "denied" | "preview" | "level2_approved",
+    phrase?: string,
+  ) => Promise<boolean>;
+
   // Gateway
   startGateway: () => Promise<boolean>;
   stopGateway: () => Promise<boolean>;

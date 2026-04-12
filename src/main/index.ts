@@ -30,6 +30,8 @@ import {
   isGatewayRunning,
   stopHealthPolling,
   restartGateway,
+  respondToApproval,
+  ApprovalResponseType,
 } from "./hermes";
 import {
   getClaw3dStatus,
@@ -110,7 +112,7 @@ import {
   persistCrashLog,
 } from "./crashReports";
 import { migrateDesktopData } from "./runtime/dataMigration";
-import { adapter, getDesktop } from "./runtime/instance";
+import { adapter, runtime, getDesktop } from "./runtime/instance";
 import {
   GET_INSTALL_INSTRUCTIONS,
   CHECK_INSTALL,
@@ -205,6 +207,8 @@ import {
   UPDATE_ERROR,
   MENU_NEW_CHAT,
   MENU_SEARCH_SESSIONS,
+  CHAT_APPROVAL_REQUEST,
+  APPROVAL_RESPOND,
 } from "../shared/channels";
 
 // Wave 7: operational safety. Capture crash dumps locally with no upload,
@@ -528,6 +532,9 @@ function setupIPC(): void {
           onUsage: (usage) => {
             event.sender.send(CHAT_USAGE, usage);
           },
+          onApprovalRequest: (request) => {
+            event.sender.send(CHAT_APPROVAL_REQUEST, request);
+          },
         },
         profile,
         resumeSessionId,
@@ -545,6 +552,16 @@ function setupIPC(): void {
       currentChatAbort = null;
     }
   });
+
+  ipcMain.handle(
+    APPROVAL_RESPOND,
+    (
+      _event,
+      approvalId: string,
+      response: ApprovalResponseType,
+      phrase?: string,
+    ) => respondToApproval(approvalId, response, phrase),
+  );
 
   // Gateway
   ipcMain.handle(START_GATEWAY, () => startGateway());
@@ -955,6 +972,16 @@ function setupUpdater(): void {
 }
 
 app.whenReady().then(() => {
+  // Platform probe — observation point for the Windows-native dev-loop
+  // cutover (2026-04-12). Logged once per process start.
+  console.log("[pan-desktop] platform probe:", {
+    nodePlatform: process.platform,
+    adapterPlatform: adapter.platform,
+    hermesHome: runtime.hermesHome,
+    pythonExe: runtime.pythonExe,
+    hermesCli: runtime.hermesCli,
+  });
+
   // app.setName + setAppUserModelId moved to module top level (before
   // crashReporter.start) to ensure userData path is correct. Keeping
   // only the dev-time crash-dump log here.
@@ -970,6 +997,11 @@ app.whenReady().then(() => {
   migrateDesktopData(getDesktop(), adapter).catch((err) =>
     console.warn("[dataMigration] Unexpected error:", err),
   );
+  try {
+    startGateway();
+  } catch (err) {
+    console.warn("[gateway] Auto-start failed:", err);
+  }
   createWindow();
   setupUpdater();
 

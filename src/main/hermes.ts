@@ -89,6 +89,15 @@ platforms:
 //  HTTP API streaming (fast path — no process spawn)
 // ────────────────────────────────────────────────────
 
+export interface ApprovalRequest {
+  id: string;
+  level: 1 | 2;
+  command: string;
+  patternKey: string;
+  description: string;
+  reason: string;
+}
+
 export interface ChatCallbacks {
   onChunk: (text: string) => void;
   onDone: (sessionId?: string) => void;
@@ -99,6 +108,7 @@ export interface ChatCallbacks {
     completionTokens: number;
     totalTokens: number;
   }) => void;
+  onApprovalRequest?: (request: ApprovalRequest) => void;
 }
 
 function sendMessageViaApi(
@@ -206,6 +216,21 @@ function sendMessageViaApi(
     }
     try {
       const parsed = JSON.parse(data);
+
+      // Approval request event (Pan Desktop overlay on Hermes gateway)
+      if (parsed.type === "approval_required" && parsed.id) {
+        if (callbacks.onApprovalRequest) {
+          callbacks.onApprovalRequest({
+            id: String(parsed.id),
+            level: parsed.level === 2 ? 2 : 1,
+            command: String(parsed.command || ""),
+            patternKey: String(parsed.pattern_key || ""),
+            description: String(parsed.description || ""),
+            reason: String(parsed.reason || ""),
+          });
+        }
+        return false;
+      }
 
       // Capture error responses forwarded through SSE
       if (parsed.error) {
@@ -318,6 +343,46 @@ function sendMessageViaApi(
       controller.abort();
     },
   };
+}
+
+// ────────────────────────────────────────────────────
+//  Approval response — POST back to the Hermes gateway
+// ────────────────────────────────────────────────────
+
+export type ApprovalResponseType =
+  | "approved"
+  | "denied"
+  | "preview"
+  | "level2_approved";
+
+export function respondToApproval(
+  approvalId: string,
+  response: ApprovalResponseType,
+  phrase?: string,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const body = JSON.stringify({
+      response,
+      ...(phrase ? { phrase } : {}),
+    });
+    const req = http.request(
+      `${HERMES_GATEWAY_URL}/v1/approvals/${encodeURIComponent(approvalId)}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        resolve(res.statusCode === 200);
+        res.resume();
+      },
+    );
+    req.on("error", () => resolve(false));
+    req.write(body);
+    req.end();
+  });
 }
 
 // ────────────────────────────────────────────────────
@@ -589,7 +654,12 @@ export function startGateway(profile?: string): boolean {
   // provider. buildHermesEnv supplies the base PATH/HOME/HERMES_HOME; we
   // layer the profile-specific env on top.
   const profileEnv = readEnv(profile);
-  const rawGatewayEnv = buildHermesEnv({ API_SERVER_ENABLED: "true" });
+  const rawGatewayEnv = buildHermesEnv({
+    API_SERVER_ENABLED: "true",
+    API_SERVER_PORT: "8642",
+    API_SERVER_HOST: "127.0.0.1",
+    GATEWAY_ALLOW_ALL_USERS: "true",
+  });
   const gatewayEnv: Record<string, string> = {};
   for (const [k, v] of Object.entries(rawGatewayEnv)) {
     if (typeof v === "string") gatewayEnv[k] = v;
@@ -607,7 +677,7 @@ export function startGateway(profile?: string): boolean {
   const gatewayCmd = runtime.buildCliCmd();
   gatewayProcess = processRunner.spawnStreaming(
     gatewayCmd.command,
-    [...gatewayCmd.args, "gateway"],
+    [...gatewayCmd.args, "gateway", "run", "--replace"],
     {
       cwd: runtime.hermesRepo,
       env: gatewayEnv,

@@ -91,8 +91,11 @@ import {
   UPDATE_AVAILABLE,
   UPDATE_DOWNLOAD_PROGRESS,
   UPDATE_DOWNLOADED,
+  UPDATE_ERROR,
   MENU_NEW_CHAT,
   MENU_SEARCH_SESSIONS,
+  CHAT_APPROVAL_REQUEST,
+  APPROVAL_RESPOND,
 } from "../shared/channels";
 
 const panAPI = {
@@ -248,6 +251,42 @@ const panAPI = {
     ipcRenderer.on(CHAT_ERROR, handler);
     return () => ipcRenderer.removeListener(CHAT_ERROR, handler);
   },
+
+  // Approval (dangerous command confirmation)
+  onChatApprovalRequest: (
+    callback: (request: {
+      id: string;
+      level: 1 | 2;
+      command: string;
+      patternKey: string;
+      description: string;
+      reason: string;
+    }) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      request: unknown,
+    ): void =>
+      callback(
+        request as {
+          id: string;
+          level: 1 | 2;
+          command: string;
+          patternKey: string;
+          description: string;
+          reason: string;
+        },
+      );
+    ipcRenderer.on(CHAT_APPROVAL_REQUEST, handler);
+    return () => ipcRenderer.removeListener(CHAT_APPROVAL_REQUEST, handler);
+  },
+
+  approvalRespond: (
+    approvalId: string,
+    response: "approved" | "denied" | "preview" | "level2_approved",
+    phrase?: string,
+  ): Promise<boolean> =>
+    ipcRenderer.invoke(APPROVAL_RESPOND, approvalId, response, phrase),
 
   // Gateway
   startGateway: (): Promise<boolean> => ipcRenderer.invoke(START_GATEWAY),
@@ -597,6 +636,15 @@ const panAPI = {
     const handler = (): void => callback();
     ipcRenderer.on(UPDATE_DOWNLOADED, handler);
     return () => ipcRenderer.removeListener(UPDATE_DOWNLOADED, handler);
+  },
+
+  onUpdateError: (callback: (error: string) => void): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      error: string,
+    ): void => callback(error);
+    ipcRenderer.on(UPDATE_ERROR, handler);
+    return () => ipcRenderer.removeListener(UPDATE_ERROR, handler);
   },
 
   // Menu events (from native menu bar)
