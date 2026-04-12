@@ -254,7 +254,7 @@ function Tools({ profile }: ToolsProps): React.JSX.Element {
 
   const loadToolsets = useCallback(async (): Promise<void> => {
     setLoading(true);
-    const list = await window.hermesAPI.getToolsets(profile);
+    const list = await window.panAPI.getToolsets(profile);
     setToolsets(list);
     setLoading(false);
   }, [profile]);
@@ -270,7 +270,7 @@ function Tools({ profile }: ToolsProps): React.JSX.Element {
     setToolsets((prev) =>
       prev.map((t) => (t.key === key ? { ...t, enabled: !currentEnabled } : t)),
     );
-    await window.hermesAPI.setToolsetEnabled(key, !currentEnabled, profile);
+    await window.panAPI.setToolsetEnabled(key, !currentEnabled, profile);
   }
 
   if (loading) {

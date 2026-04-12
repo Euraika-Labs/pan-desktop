@@ -80,14 +80,14 @@ export function listSessions(limit = 30, offset = 0): SessionSummary[] {
       title: string | null;
     }>;
 
-    return rows.map((r) => ({
-      id: r.id,
-      source: r.source,
-      startedAt: r.started_at,
-      endedAt: r.ended_at,
-      messageCount: r.message_count,
-      model: r.model || "",
-      title: r.title,
+    return rows.map((row) => ({
+      id: row.id,
+      source: row.source,
+      startedAt: row.started_at,
+      endedAt: row.ended_at,
+      messageCount: row.message_count,
+      model: row.model || "",
+      title: row.title,
       preview: "",
     }));
   } finally {
@@ -146,14 +146,14 @@ export function searchSessions(query: string, limit = 20): SearchResult[] {
       snippet: string;
     }>;
 
-    return rows.map((r) => ({
-      sessionId: r.session_id,
-      title: r.title,
-      startedAt: r.started_at,
-      source: r.source,
-      messageCount: r.message_count,
-      model: r.model || "",
-      snippet: r.snippet || "",
+    return rows.map((row) => ({
+      sessionId: row.session_id,
+      title: row.title,
+      startedAt: row.started_at,
+      source: row.source,
+      messageCount: row.message_count,
+      model: row.model || "",
+      snippet: row.snippet || "",
     }));
   } catch {
     return [];
@@ -181,11 +181,11 @@ export function getSessionMessages(sessionId: string): SessionMessage[] {
       timestamp: number;
     }>;
 
-    return rows.map((r) => ({
-      id: r.id,
-      role: r.role as "user" | "assistant",
-      content: r.content,
-      timestamp: r.timestamp,
+    return rows.map((row) => ({
+      id: row.id,
+      role: row.role as "user" | "assistant",
+      content: row.content,
+      timestamp: row.timestamp,
     }));
   } finally {
     db.close();

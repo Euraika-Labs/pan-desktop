@@ -11,14 +11,19 @@ import type { ChildProcess } from "./platform/processRunner";
 import { buildHermesEnv } from "./installer";
 import { stripAnsi, safeWriteFile } from "./utils";
 
-const HERMES_OFFICE_REPO = "https://github.com/fathah/hermes-office";
-const HERMES_OFFICE_DIR = join(runtime.hermesHome, "hermes-office");
+const CLAW3D_REPO_URL = "https://github.com/fathah/hermes-office";
+const CLAW3D_REPO_DIR = join(runtime.hermesHome, "hermes-office");
 const DEV_PID_FILE = join(runtime.hermesHome, "claw3d-dev.pid");
 const ADAPTER_PID_FILE = join(runtime.hermesHome, "claw3d-adapter.pid");
 const PORT_FILE = join(runtime.hermesHome, "claw3d-port");
 const WS_URL_FILE = join(runtime.hermesHome, "claw3d-ws-url");
 const DEFAULT_PORT = 3000;
 const DEFAULT_WS_URL = "ws://localhost:18789";
+const PORT_CHECK_TIMEOUT_MS = 300;
+const PROGRESS_DETAIL_MAX_LENGTH = 120;
+const ERROR_TRUNCATE_LENGTH = 300;
+const LOG_BUFFER_MAX_LENGTH = 2000;
+const PROCESS_KILL_GRACE_MS = 3000;
 
 /**
  * Where Claw3D stores its own onboarding settings. In Wave 1 we moved this
@@ -109,8 +114,8 @@ function writeClaw3dSettings(wsUrl?: string): void {
 
   // Write .env in claw3d directory
   try {
-    if (existsSync(HERMES_OFFICE_DIR)) {
-      const envPath = join(HERMES_OFFICE_DIR, ".env");
+    if (existsSync(CLAW3D_REPO_DIR)) {
+      const envPath = join(CLAW3D_REPO_DIR, ".env");
       const port = getSavedPort();
       const envContent = [
         "# Auto-configured by Pan Desktop",
@@ -134,7 +139,7 @@ function writeClaw3dSettings(wsUrl?: string): void {
 function checkPort(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = createConnection({ port, host: "127.0.0.1" });
-    socket.setTimeout(300); // 300ms is plenty for localhost
+    socket.setTimeout(PORT_CHECK_TIMEOUT_MS); // plenty for localhost
     socket.on("connect", () => {
       socket.destroy();
       resolve(true); // port is in use
@@ -208,8 +213,8 @@ function isAdapterRunning(): boolean {
 }
 
 export async function getClaw3dStatus(): Promise<Claw3dStatus> {
-  const cloned = existsSync(join(HERMES_OFFICE_DIR, "package.json"));
-  const installed = existsSync(join(HERMES_OFFICE_DIR, "node_modules"));
+  const cloned = existsSync(join(CLAW3D_REPO_DIR, "package.json"));
+  const installed = existsSync(join(CLAW3D_REPO_DIR, "node_modules"));
   const port = getSavedPort();
   const devRunning = isDevServerRunning();
   // Only check port conflict when dev server is NOT running
@@ -256,7 +261,7 @@ export async function setupClaw3d(
       step,
       totalSteps,
       title,
-      detail: text.trim().slice(0, 120),
+      detail: text.trim().slice(0, PROGRESS_DETAIL_MAX_LENGTH),
       log,
     });
   }
@@ -264,14 +269,14 @@ export async function setupClaw3d(
   const env = buildHermesEnv({ TERM: "dumb" });
 
   // Step 1: Clone (or pull if already cloned)
-  const cloned = existsSync(join(HERMES_OFFICE_DIR, "package.json"));
+  const cloned = existsSync(join(CLAW3D_REPO_DIR, "package.json"));
 
   if (!cloned) {
     emit(1, "Cloning Claw3D repository...", "Cloning from GitHub...\n");
     await new Promise<void>((resolve, reject) => {
       const proc = processRunner.spawnStreaming(
         "git",
-        ["clone", HERMES_OFFICE_REPO, HERMES_OFFICE_DIR],
+        ["clone", CLAW3D_REPO_URL, CLAW3D_REPO_DIR],
         {
           cwd: adapter.homeDir(),
           env,
@@ -302,7 +307,7 @@ export async function setupClaw3d(
     );
     await new Promise<void>((resolve) => {
       const proc = processRunner.spawnStreaming("git", ["pull", "--ff-only"], {
-        cwd: HERMES_OFFICE_DIR,
+        cwd: CLAW3D_REPO_DIR,
         env,
         onStdout: (text) => emit(1, "Updating Claw3D...", stripAnsi(text)),
         onStderr: (text) => emit(1, "Updating Claw3D...", stripAnsi(text)),
@@ -320,7 +325,7 @@ export async function setupClaw3d(
 
   await new Promise<void>((resolve, reject) => {
     const proc = processRunner.spawnStreaming(npm, ["install"], {
-      cwd: HERMES_OFFICE_DIR,
+      cwd: CLAW3D_REPO_DIR,
       env,
       onStdout: (text) =>
         emit(2, "Installing dependencies...", stripAnsi(text)),
@@ -351,7 +356,7 @@ export async function setupClaw3d(
 
 export async function startDevServer(): Promise<boolean> {
   if (isDevServerRunning()) return true;
-  if (!existsSync(join(HERMES_OFFICE_DIR, "node_modules"))) return false;
+  if (!existsSync(join(CLAW3D_REPO_DIR, "node_modules"))) return false;
 
   devServerError = "";
   devServerLogs = "";
@@ -368,7 +373,7 @@ export async function startDevServer(): Promise<boolean> {
   // docs/DEVELOPER_WORKFLOW.md §"Known warnings — Claw3D workspace root"
   // and docs/windows/CLAW3D_UPSTREAM_ISSUE_DRAFT.md.
   const proc = processRunner.spawnStreaming(npm, ["run", "dev"], {
-    cwd: HERMES_OFFICE_DIR,
+    cwd: CLAW3D_REPO_DIR,
     env: buildHermesEnv({
       TERM: "dumb",
       PORT: String(port),
@@ -379,19 +384,19 @@ export async function startDevServer(): Promise<boolean> {
     detached: true,
     onStdout: (text) => {
       devServerLogs += stripAnsi(text);
-      if (devServerLogs.length > 2000)
-        devServerLogs = devServerLogs.slice(-2000);
+      if (devServerLogs.length > LOG_BUFFER_MAX_LENGTH)
+        devServerLogs = devServerLogs.slice(-LOG_BUFFER_MAX_LENGTH);
     },
     onStderr: (raw) => {
       const text = stripAnsi(raw);
       devServerLogs += text;
-      if (devServerLogs.length > 2000)
-        devServerLogs = devServerLogs.slice(-2000);
+      if (devServerLogs.length > LOG_BUFFER_MAX_LENGTH)
+        devServerLogs = devServerLogs.slice(-LOG_BUFFER_MAX_LENGTH);
       if (
         /error|EADDRINUSE|ENOENT|failed|fatal/i.test(text) &&
         !/warning/i.test(text)
       ) {
-        devServerError = text.trim().slice(0, 300);
+        devServerError = text.trim().slice(0, ERROR_TRUNCATE_LENGTH);
       }
     },
   });
@@ -414,7 +419,7 @@ export async function startDevServer(): Promise<boolean> {
 export async function stopDevServer(): Promise<void> {
   if (devServerProcess) {
     await processRunner
-      .killTree(devServerProcess, { graceMs: 3000 })
+      .killTree(devServerProcess, { graceMs: PROCESS_KILL_GRACE_MS })
       .catch(() => {
         /* already gone */
       });
@@ -423,38 +428,42 @@ export async function stopDevServer(): Promise<void> {
 
   const pid = readPid(DEV_PID_FILE);
   if (pid) {
-    await processRunner.killTree(pid, { graceMs: 3000 }).catch(() => {
-      /* already gone */
-    });
+    await processRunner
+      .killTree(pid, { graceMs: PROCESS_KILL_GRACE_MS })
+      .catch(() => {
+        /* already gone */
+      });
   }
   cleanupPid(DEV_PID_FILE);
 }
 
 export async function startAdapter(): Promise<boolean> {
   if (isAdapterRunning()) return true;
-  if (!existsSync(join(HERMES_OFFICE_DIR, "node_modules"))) return false;
+  if (!existsSync(join(CLAW3D_REPO_DIR, "node_modules"))) return false;
 
   adapterError = "";
   adapterLogs = "";
   const npm = await findNpm();
 
   const proc = processRunner.spawnStreaming(npm, ["run", "hermes-adapter"], {
-    cwd: HERMES_OFFICE_DIR,
+    cwd: CLAW3D_REPO_DIR,
     env: buildHermesEnv({ TERM: "dumb" }),
     detached: true,
     onStdout: (text) => {
       adapterLogs += stripAnsi(text);
-      if (adapterLogs.length > 2000) adapterLogs = adapterLogs.slice(-2000);
+      if (adapterLogs.length > LOG_BUFFER_MAX_LENGTH)
+        adapterLogs = adapterLogs.slice(-LOG_BUFFER_MAX_LENGTH);
     },
     onStderr: (raw) => {
       const text = stripAnsi(raw);
       adapterLogs += text;
-      if (adapterLogs.length > 2000) adapterLogs = adapterLogs.slice(-2000);
+      if (adapterLogs.length > LOG_BUFFER_MAX_LENGTH)
+        adapterLogs = adapterLogs.slice(-LOG_BUFFER_MAX_LENGTH);
       if (
         /error|EADDRINUSE|ENOENT|failed|fatal/i.test(text) &&
         !/warning/i.test(text)
       ) {
-        adapterError = text.trim().slice(0, 300);
+        adapterError = text.trim().slice(0, ERROR_TRUNCATE_LENGTH);
       }
     },
   });
@@ -488,7 +497,7 @@ export async function startAdapter(): Promise<boolean> {
 export async function stopAdapter(): Promise<void> {
   if (adapterProcess) {
     await processRunner
-      .killTree(adapterProcess, { graceMs: 3000 })
+      .killTree(adapterProcess, { graceMs: PROCESS_KILL_GRACE_MS })
       .catch(() => {
         /* already gone */
       });
@@ -497,9 +506,11 @@ export async function stopAdapter(): Promise<void> {
 
   const pid = readPid(ADAPTER_PID_FILE);
   if (pid) {
-    await processRunner.killTree(pid, { graceMs: 3000 }).catch(() => {
-      /* already gone */
-    });
+    await processRunner
+      .killTree(pid, { graceMs: PROCESS_KILL_GRACE_MS })
+      .catch(() => {
+        /* already gone */
+      });
   }
   cleanupPid(ADAPTER_PID_FILE);
 }
@@ -508,7 +519,7 @@ export async function startAll(): Promise<{
   success: boolean;
   error?: string;
 }> {
-  if (!existsSync(join(HERMES_OFFICE_DIR, "node_modules"))) {
+  if (!existsSync(join(CLAW3D_REPO_DIR, "node_modules"))) {
     return {
       success: false,
       error: "Claw3D is not installed. Please install it first.",

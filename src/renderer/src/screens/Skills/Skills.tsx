@@ -37,12 +37,12 @@ function Skills({ profile }: SkillsProps): React.JSX.Element {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const loadInstalled = useCallback(async (): Promise<void> => {
-    const list = await window.hermesAPI.listInstalledSkills(profile);
+    const list = await window.panAPI.listInstalledSkills(profile);
     setInstalledSkills(list);
   }, [profile]);
 
   const loadBundled = useCallback(async (): Promise<void> => {
-    const list = await window.hermesAPI.listBundledSkills();
+    const list = await window.panAPI.listBundledSkills();
     setBundledSkills(list);
   }, []);
 
@@ -58,14 +58,14 @@ function Skills({ profile }: SkillsProps): React.JSX.Element {
 
   async function handleViewDetail(skill: InstalledSkill): Promise<void> {
     setDetailSkill(skill);
-    const content = await window.hermesAPI.getSkillContent(skill.path);
+    const content = await window.panAPI.getSkillContent(skill.path);
     setDetailContent(content);
   }
 
   async function handleInstall(name: string): Promise<void> {
     setActionInProgress(name);
     setError("");
-    const result = await window.hermesAPI.installSkill(name, profile);
+    const result = await window.panAPI.installSkill(name, profile);
     setActionInProgress(null);
     if (result.success) {
       await loadInstalled();
@@ -77,7 +77,7 @@ function Skills({ profile }: SkillsProps): React.JSX.Element {
   async function handleUninstall(name: string): Promise<void> {
     setActionInProgress(name);
     setError("");
-    const result = await window.hermesAPI.uninstallSkill(name, profile);
+    const result = await window.panAPI.uninstallSkill(name, profile);
     setActionInProgress(null);
     if (result.success) {
       setDetailSkill(null);
@@ -94,11 +94,11 @@ function Skills({ profile }: SkillsProps): React.JSX.Element {
   // Filter logic
   const filteredInstalled = installedSkills.filter((s) => {
     if (search) {
-      const q = search.toLowerCase();
+      const query = search.toLowerCase();
       return (
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q) ||
-        s.category.toLowerCase().includes(q)
+        s.name.toLowerCase().includes(query) ||
+        s.description.toLowerCase().includes(query) ||
+        s.category.toLowerCase().includes(query)
       );
     }
     return true;
@@ -107,11 +107,11 @@ function Skills({ profile }: SkillsProps): React.JSX.Element {
   const filteredBundled = bundledSkills.filter((s) => {
     let matches = true;
     if (search) {
-      const q = search.toLowerCase();
+      const query = search.toLowerCase();
       matches =
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q) ||
-        s.category.toLowerCase().includes(q);
+        s.name.toLowerCase().includes(query) ||
+        s.description.toLowerCase().includes(query) ||
+        s.category.toLowerCase().includes(query);
     }
     if (categoryFilter) {
       matches = matches && s.category === categoryFilter;

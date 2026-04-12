@@ -7,6 +7,9 @@ import type { PlatformAdapter } from "../platform/platformAdapter";
 import type { ProcessRunner } from "../platform/processRunner";
 import type { RuntimePaths } from "./runtimePaths";
 import { stripAnsi } from "../utils";
+
+const DOCTOR_COMMAND_TIMEOUT_MS = 30000;
+const PROGRESS_DETAIL_MAX_LENGTH = 120;
 import {
   applyOverlays,
   type OverlayResult,
@@ -239,7 +242,7 @@ class UnixInstallerStrategy implements RuntimeInstaller {
         step: currentStep,
         totalSteps,
         title: currentTitle,
-        detail: text.trim().slice(0, 120),
+        detail: text.trim().slice(0, PROGRESS_DETAIL_MAX_LENGTH),
         log,
       });
     };
@@ -319,7 +322,7 @@ class UnixInstallerStrategy implements RuntimeInstaller {
         {
           cwd: this.deps.runtime.hermesRepo,
           env: this.deps.buildEnv(),
-          timeoutMs: 30000,
+          timeoutMs: DOCTOR_COMMAND_TIMEOUT_MS,
         },
       );
       return stripAnsi(result.stdout);
@@ -482,7 +485,7 @@ class WindowsInstallerStrategy implements RuntimeInstaller {
         step: currentStep,
         totalSteps,
         title: currentTitle,
-        detail: text.trim().slice(0, 120),
+        detail: text.trim().slice(0, PROGRESS_DETAIL_MAX_LENGTH),
         log,
       });
     };
@@ -512,7 +515,9 @@ class WindowsInstallerStrategy implements RuntimeInstaller {
       : join(app.getAppPath(), "resources", "overlays");
     const pinnedRef = this.readPinnedRef(overlayDirForManifest);
     if (pinnedRef) {
-      emit(`Pinning upstream Hermes Agent to commit ${pinnedRef.slice(0, 12)}\n`);
+      emit(
+        `Pinning upstream Hermes Agent to commit ${pinnedRef.slice(0, 12)}\n`,
+      );
     }
 
     // install.ps1 accepts -HermesHome, -InstallDir, and -Ref. Pan Desktop
@@ -668,7 +673,7 @@ class WindowsInstallerStrategy implements RuntimeInstaller {
         {
           cwd: this.deps.runtime.hermesRepo,
           env: this.deps.buildEnv(),
-          timeoutMs: 30000,
+          timeoutMs: DOCTOR_COMMAND_TIMEOUT_MS,
         },
       );
       return stripAnsi(result.stdout);

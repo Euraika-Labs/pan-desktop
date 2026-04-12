@@ -101,5 +101,39 @@ export default defineConfig(
       ],
     },
   },
+  // ──────────────────────────────────────────────────────────────────────
+  // Naming conventions
+  //
+  // Enforces the project's naming patterns established during the M1
+  // naming audit. See CLAUDE.md "Architecture — key boundaries" and the
+  // naming analysis report for rationale.
+  //
+  // Factory naming convention (not enforced by lint, documented here):
+  //   create*() = pure factory, returns a new instance every time
+  //   get*()    = singleton accessor (lazy-init, cached) — see instance.ts
+  // ──────────────────────────────────────────────────────────────────────
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/naming-convention": [
+        "warn",
+        // Interfaces and type aliases: PascalCase, no "I" prefix
+        {
+          selector: ["interface", "typeAlias"],
+          format: ["PascalCase"],
+        },
+        // Enum members: PascalCase or UPPER_CASE
+        {
+          selector: "enumMember",
+          format: ["PascalCase", "UPPER_CASE"],
+        },
+        // Type parameters (generics): PascalCase, single letter allowed
+        {
+          selector: "typeParameter",
+          format: ["PascalCase"],
+        },
+      ],
+    },
+  },
   eslintConfigPrettier,
 );

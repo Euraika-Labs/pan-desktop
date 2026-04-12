@@ -10,6 +10,9 @@ import {
 } from "./runtimeManifest";
 import { stripAnsi } from "../utils";
 
+const VERSION_CHECK_TIMEOUT_MS = 15000;
+const PROGRESS_DETAIL_MAX_LENGTH = 120;
+
 /**
  * Wave 4: Hermes Agent runtime update service.
  *
@@ -145,7 +148,7 @@ class RuntimeUpdateService implements RuntimeUpdate {
           {
             cwd: this.deps.runtime.hermesRepo,
             env: this.deps.buildEnv(),
-            timeoutMs: 15000,
+            timeoutMs: VERSION_CHECK_TIMEOUT_MS,
           },
         );
         const version = result.stdout.trim();
@@ -213,7 +216,7 @@ class RuntimeUpdateService implements RuntimeUpdate {
         step: 1,
         totalSteps: 1,
         title: "Updating Hermes Agent",
-        detail: text.trim().slice(0, 120),
+        detail: text.trim().slice(0, PROGRESS_DETAIL_MAX_LENGTH),
         log,
       });
     };

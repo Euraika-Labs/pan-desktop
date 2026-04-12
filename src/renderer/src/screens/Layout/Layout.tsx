@@ -74,16 +74,14 @@ function Layout(): React.JSX.Element {
   const [downloadPercent, setDownloadPercent] = useState(0);
 
   useEffect(() => {
-    const cleanupAvailable = window.hermesAPI.onUpdateAvailable((info) => {
+    const cleanupAvailable = window.panAPI.onUpdateAvailable((info) => {
       setUpdateVersion(info.version);
       setUpdateState("available");
     });
-    const cleanupProgress = window.hermesAPI.onUpdateDownloadProgress(
-      (info) => {
-        setDownloadPercent(info.percent);
-      },
-    );
-    const cleanupDownloaded = window.hermesAPI.onUpdateDownloaded(() => {
+    const cleanupProgress = window.panAPI.onUpdateDownloadProgress((info) => {
+      setDownloadPercent(info.percent);
+    });
+    const cleanupDownloaded = window.panAPI.onUpdateDownloaded(() => {
       setUpdateState("ready");
     });
     return () => {
@@ -96,15 +94,15 @@ function Layout(): React.JSX.Element {
   async function handleUpdate(): Promise<void> {
     if (updateState === "available") {
       setUpdateState("downloading");
-      await window.hermesAPI.downloadUpdate();
+      await window.panAPI.downloadUpdate();
     } else if (updateState === "ready") {
-      await window.hermesAPI.installUpdate();
+      await window.panAPI.installUpdate();
     }
   }
 
   const handleNewChat = useCallback(() => {
     // Abort any in-flight chat before clearing
-    window.hermesAPI.abortChat();
+    window.panAPI.abortChat();
     setMessages([]);
     setCurrentSessionId(null);
     setView("chat");
@@ -112,10 +110,10 @@ function Layout(): React.JSX.Element {
 
   // Listen for menu IPC events (Cmd+N, Cmd+K from app menu)
   useEffect(() => {
-    const cleanupNewChat = window.hermesAPI.onMenuNewChat(() => {
+    const cleanupNewChat = window.panAPI.onMenuNewChat(() => {
       handleNewChat();
     });
-    const cleanupSearch = window.hermesAPI.onMenuSearchSessions(() => {
+    const cleanupSearch = window.panAPI.onMenuSearchSessions(() => {
       setView("sessions");
     });
     return () => {
@@ -131,7 +129,7 @@ function Layout(): React.JSX.Element {
   }, []);
 
   const handleResumeSession = useCallback(async (sessionId: string) => {
-    const dbMessages = await window.hermesAPI.getSessionMessages(sessionId);
+    const dbMessages = await window.panAPI.getSessionMessages(sessionId);
     const chatMessages: ChatMessage[] = dbMessages.map((m) => ({
       id: `db-${m.id}`,
       role: m.role === "user" ? "user" : "agent",

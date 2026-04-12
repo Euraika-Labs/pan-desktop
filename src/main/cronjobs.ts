@@ -5,6 +5,8 @@ import { runtime, processRunner } from "./runtime/instance";
 import { buildHermesEnv } from "./installer";
 import { profileHome } from "./utils";
 
+const CLI_COMMAND_TIMEOUT_MS = 15000;
+
 export interface CronJob {
   id: string;
   name: string;
@@ -102,7 +104,7 @@ async function runCronCommand(
     const result = await processRunner.run(cmd.command, cliArgs, {
       cwd: runtime.hermesRepo,
       env: buildHermesEnv(),
-      timeoutMs: 15000,
+      timeoutMs: CLI_COMMAND_TIMEOUT_MS,
     });
     return { success: true, output: result.stdout };
   } catch (err) {

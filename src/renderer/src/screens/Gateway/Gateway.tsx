@@ -11,11 +11,11 @@ function Gateway({ profile }: { profile?: string }): React.JSX.Element {
   const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
 
   const loadConfig = useCallback(async (): Promise<void> => {
-    const envData = await window.hermesAPI.getEnv(profile);
+    const envData = await window.panAPI.getEnv(profile);
     setEnv(envData);
-    const gwStatus = await window.hermesAPI.gatewayStatus();
+    const gwStatus = await window.panAPI.gatewayStatus();
     setGatewayRunning(gwStatus);
-    const platforms = await window.hermesAPI.getPlatformEnabled(profile);
+    const platforms = await window.panAPI.getPlatformEnabled(profile);
     setPlatformEnabled(platforms);
   }, [profile]);
 
@@ -26,7 +26,7 @@ function Gateway({ profile }: { profile?: string }): React.JSX.Element {
   // Poll gateway status (10s interval to reduce IPC overhead)
   useEffect(() => {
     const interval = setInterval(async () => {
-      const status = await window.hermesAPI.gatewayStatus();
+      const status = await window.panAPI.gatewayStatus();
       setGatewayRunning(status);
     }, 10000);
     return () => clearInterval(interval);
@@ -34,14 +34,14 @@ function Gateway({ profile }: { profile?: string }): React.JSX.Element {
 
   async function toggleGateway(): Promise<void> {
     if (gatewayRunning) {
-      await window.hermesAPI.stopGateway();
+      await window.panAPI.stopGateway();
       setGatewayRunning(false);
     } else {
-      const started = await window.hermesAPI.startGateway();
+      const started = await window.panAPI.startGateway();
       setGatewayRunning(started);
       // Re-check status after a short delay to confirm it stayed up
       setTimeout(async () => {
-        const status = await window.hermesAPI.gatewayStatus();
+        const status = await window.panAPI.gatewayStatus();
         setGatewayRunning(status);
       }, 2000);
     }
@@ -50,17 +50,17 @@ function Gateway({ profile }: { profile?: string }): React.JSX.Element {
   async function togglePlatform(platform: string): Promise<void> {
     const newValue = !platformEnabled[platform];
     setPlatformEnabled((prev) => ({ ...prev, [platform]: newValue }));
-    await window.hermesAPI.setPlatformEnabled(platform, newValue, profile);
+    await window.panAPI.setPlatformEnabled(platform, newValue, profile);
     // Re-check gateway status after restart
     setTimeout(async () => {
-      const status = await window.hermesAPI.gatewayStatus();
+      const status = await window.panAPI.gatewayStatus();
       setGatewayRunning(status);
     }, 3000);
   }
 
   async function handleBlur(key: string): Promise<void> {
     const value = env[key] || "";
-    await window.hermesAPI.setEnv(key, value, profile);
+    await window.panAPI.setEnv(key, value, profile);
     setSavedKey(key);
     setTimeout(() => setSavedKey(null), 2000);
   }

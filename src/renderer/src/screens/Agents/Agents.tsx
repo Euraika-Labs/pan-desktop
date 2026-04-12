@@ -49,7 +49,7 @@ function Agents({
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const loadProfiles = useCallback(async (): Promise<void> => {
-    const list = await window.hermesAPI.listProfiles();
+    const list = await window.panAPI.listProfiles();
     setProfiles(list);
     setLoading(false);
   }, []);
@@ -63,7 +63,7 @@ function Agents({
     if (!name) return;
     setCreating(true);
     setError("");
-    const result = await window.hermesAPI.createProfile(name, cloneConfig);
+    const result = await window.panAPI.createProfile(name, cloneConfig);
     setCreating(false);
     if (result.success) {
       setShowCreate(false);
@@ -75,7 +75,7 @@ function Agents({
   }
 
   async function handleDelete(name: string): Promise<void> {
-    const result = await window.hermesAPI.deleteProfile(name);
+    const result = await window.panAPI.deleteProfile(name);
     if (result.success) {
       if (activeProfile === name) onSelectProfile("default");
       loadProfiles();
@@ -84,7 +84,7 @@ function Agents({
   }
 
   async function handleSelect(name: string): Promise<void> {
-    await window.hermesAPI.setActiveProfile(name);
+    await window.panAPI.setActiveProfile(name);
     onSelectProfile(name);
     loadProfiles();
   }
@@ -131,10 +131,10 @@ function Agents({
             placeholder="Agent name (e.g. coder)"
             value={newName}
             onChange={(e) => {
-              const v = e.target.value
+              const sanitizedName = e.target.value
                 .toLowerCase()
                 .replace(/[^a-z0-9_-]/g, "");
-              setNewName(v);
+              setNewName(sanitizedName);
               setError("");
             }}
             onKeyDown={(e) => e.key === "Enter" && handleCreate()}

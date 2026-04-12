@@ -17,7 +17,7 @@ function App(): React.JSX.Element {
   const isMac = window.electron?.process?.platform === "darwin";
 
   const runInstallCheck = useCallback(() => {
-    window.hermesAPI
+    window.panAPI
       .checkInstall()
       .then((status) => {
         if (!status.installed) {
