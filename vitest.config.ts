@@ -22,4 +22,10 @@ export default defineConfig({
     // Coverage is not gated for M1 — the point of Wave 1 tests is to
     // lock the abstraction contracts, not hit a coverage number.
   },
+  coverage: {
+    provider: "v8",
+    reporter: ["text", "text-summary", "lcov"],
+    include: ["src/main/**/*.ts"],
+    exclude: ["src/main/**/*.test.ts", "src/main/generated/**"],
+  },
 });

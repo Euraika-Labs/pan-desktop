@@ -232,6 +232,14 @@ function sendMessageViaApi(
         return false;
       }
 
+      // Structured tool progress event — preferred over regex detection
+      if (parsed.type === "tool_progress" && typeof parsed.tool === "string") {
+        if (callbacks.onToolProgress) {
+          callbacks.onToolProgress(parsed.tool);
+        }
+        return false;
+      }
+
       // Capture error responses forwarded through SSE
       if (parsed.error) {
         lastError = parsed.error.message || JSON.stringify(parsed.error);
@@ -252,7 +260,9 @@ function sendMessageViaApi(
 
       if (delta?.content) {
         const content = delta.content.trim();
-        // Detect tool progress lines: `🔍 search_web`
+        // Detect tool progress lines: `🔍 search_web` (regex fallback for
+        // backwards compatibility when the gateway does not emit structured
+        // tool_progress events)
         const match = toolProgressRe.exec(content);
         if (match && callbacks.onToolProgress) {
           callbacks.onToolProgress(`${match[1]} ${match[2]}`);

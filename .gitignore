@@ -29,4 +29,4 @@ release/
 .claude/worktrees
 
 # Orchestrator session state
-.claude-octopus/
+.claude-octopus/coverage/

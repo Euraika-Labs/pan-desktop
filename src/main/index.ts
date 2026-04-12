@@ -67,6 +67,8 @@ import {
   syncSessionCache,
   listCachedSessions,
   updateSessionTitle,
+  startSessionWatcher,
+  stopSessionWatcher,
 } from "./session-cache";
 import {
   listModels,
@@ -997,6 +999,7 @@ app.whenReady().then(() => {
   migrateDesktopData(getDesktop(), adapter).catch((err) =>
     console.warn("[dataMigration] Unexpected error:", err),
   );
+  startSessionWatcher();
   try {
     startGateway();
   } catch (err) {
@@ -1020,6 +1023,7 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   stopHealthPolling();
+  stopSessionWatcher();
   stopGateway();
   stopClaw3d();
 });
