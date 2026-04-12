@@ -35,6 +35,9 @@ extraResources:
 win:
   executableName: pan-desktop
   requestedExecutionLevel: asInvoker
+  target:
+    - nsis
+    - portable
   # Long-path manifest (longPathAware) is deferred to M1.1 — electron-builder
   # 26.x has no direct `manifest` key, requires mt.exe + afterPack injection.
   # See docs/WAVE_5_TO_9_PLAN.md Wave 6 gap #11 and M1_1_TICKETS.md
@@ -55,6 +58,8 @@ nsis:
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+portable:
+  artifactName: ${name}-${version}-portable.${ext}
 mac:
   icon: build/icon.icns
   entitlements: build/entitlements.mac.plist

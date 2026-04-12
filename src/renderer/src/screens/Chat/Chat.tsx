@@ -261,13 +261,29 @@ function Chat({
   }, [messages]);
 
   const loadModelConfig = useCallback(async (): Promise<void> => {
-    const [modelConfig, savedModels] = await Promise.all([
+    const [modelConfig, initialModels] = await Promise.all([
       window.panAPI.getModelConfig(profile),
       window.panAPI.listModels(),
     ]);
     setCurrentModel(modelConfig.model);
     setCurrentProvider(modelConfig.provider);
     setCurrentBaseUrl(modelConfig.baseUrl);
+
+    // Auto-discover remote models for providers with a base URL
+    let savedModels = initialModels;
+    if (modelConfig.baseUrl && modelConfig.provider === "regolo") {
+      try {
+        const env = await window.panAPI.getEnv(profile);
+        const apiKey = env.REGOLO_API_KEY || env.OPENAI_API_KEY || "";
+        savedModels = await window.panAPI.syncRemoteModels(
+          modelConfig.provider,
+          modelConfig.baseUrl,
+          apiKey,
+        );
+      } catch {
+        // Discovery failed — use existing saved models
+      }
+    }
 
     // Group saved models by provider
     const groupMap = new Map<string, ModelGroup>();

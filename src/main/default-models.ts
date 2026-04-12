@@ -5,7 +5,7 @@
  * on fresh install. Format:
  *   { name: "Display Name", provider: "provider-key", model: "model-id", baseUrl: "" }
  *
- * Provider keys: openrouter, anthropic, openai, custom
+ * Provider keys: openrouter, anthropic, openai, regolo, custom
  * For openrouter models, use the full path (e.g. "anthropic/claude-sonnet-4-20250514")
  * For direct provider models, use the provider's model ID (e.g. "claude-sonnet-4-20250514")
  */
@@ -40,6 +40,32 @@ const DEFAULT_MODELS: DefaultModel[] = [
     provider: "openai",
     model: "gpt-4.1",
     baseUrl: "",
+  },
+
+  // ── Regolo (EU-hosted, OpenAI-compatible) ───────────────────────────
+  {
+    name: "Llama 3.3 70B",
+    provider: "regolo",
+    model: "Llama-3.3-70B-Instruct",
+    baseUrl: "https://api.regolo.ai/v1",
+  },
+  {
+    name: "Qwen3 235B",
+    provider: "regolo",
+    model: "Qwen3-235B-A22B",
+    baseUrl: "https://api.regolo.ai/v1",
+  },
+  {
+    name: "DeepSeek R1",
+    provider: "regolo",
+    model: "DeepSeek-R1",
+    baseUrl: "https://api.regolo.ai/v1",
+  },
+  {
+    name: "Mistral Small 3.2",
+    provider: "regolo",
+    model: "Mistral-Small-3.2-24B-Instruct-2506",
+    baseUrl: "https://api.regolo.ai/v1",
   },
 ];
 

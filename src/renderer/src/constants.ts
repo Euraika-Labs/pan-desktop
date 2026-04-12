@@ -20,6 +20,7 @@ export const PROVIDERS = {
     { value: "openrouter", label: "OpenRouter" },
     { value: "anthropic", label: "Anthropic" },
     { value: "openai", label: "OpenAI" },
+    { value: "regolo", label: "Regolo" },
     { value: "custom", label: "Local / Custom" },
   ],
 
@@ -27,6 +28,7 @@ export const PROVIDERS = {
     openrouter: "OpenRouter",
     anthropic: "Anthropic",
     openai: "OpenAI",
+    regolo: "Regolo",
     custom: "Custom",
   } as Record<string, string>,
 
@@ -65,6 +67,18 @@ export const PROVIDERS = {
       placeholder: "sk-...",
       configProvider: "openai",
       baseUrl: "",
+      needsKey: true,
+    },
+    {
+      id: "regolo",
+      name: "Regolo",
+      desc: "EU-hosted, OpenAI-compatible",
+      tag: "Euraika Partner",
+      envKey: "REGOLO_API_KEY",
+      url: "https://dashboard.regolo.ai",
+      placeholder: "sk-...",
+      configProvider: "regolo",
+      baseUrl: "https://api.regolo.ai/v1",
       needsKey: true,
     },
     {
@@ -137,6 +151,12 @@ export const SETTINGS_SECTIONS: SectionDef[] = [
         label: "Anthropic API Key",
         type: "password",
         hint: "Direct access to Claude models",
+      },
+      {
+        key: "REGOLO_API_KEY",
+        label: "Regolo API Key",
+        type: "password",
+        hint: "EU-hosted open models (Euraika partner)",
       },
       {
         key: "GROQ_API_KEY",

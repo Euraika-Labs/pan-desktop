@@ -284,6 +284,20 @@ interface PanAPI {
     baseUrl: string,
     apiKey: string | null,
   ) => Promise<{ ok: boolean; models: string[]; error?: string }>;
+  syncRemoteModels: (
+    provider: string,
+    baseUrl: string,
+    apiKey?: string,
+  ) => Promise<
+    Array<{
+      id: string;
+      name: string;
+      provider: string;
+      model: string;
+      baseUrl: string;
+      createdAt: number;
+    }>
+  >;
 
   // Claw3D
   claw3dStatus: () => Promise<{

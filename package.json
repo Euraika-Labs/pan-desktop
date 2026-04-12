@@ -1,6 +1,6 @@
 {
   "name": "pan-desktop",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Pan Desktop — native Windows desktop for Hermes Agent. Hard fork of fathah/hermes-desktop.",
   "productName": "Pan Desktop",
   "main": "./out/main/index.js",

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, appendFileSync } from "fs";
 import { join } from "path";
 import http from "http";
-import { runtime, processRunner } from "./runtime/instance";
+import { runtime, processRunner, adapter } from "./runtime/instance";
 import type { ChildProcess } from "./platform/processRunner";
 import { buildHermesEnv } from "./installer";
 import { getModelConfig, readEnv } from "./config";
@@ -17,6 +17,7 @@ const ERROR_BODY_TRUNCATE_LENGTH = 200;
 
 const LOCAL_PROVIDERS = new Set([
   "custom",
+  "regolo",
   "lmstudio",
   "ollama",
   "vllm",
@@ -29,6 +30,7 @@ const URL_KEY_MAP: Array<{ pattern: RegExp; envKey: string }> = [
   { pattern: /anthropic\.com/i, envKey: "ANTHROPIC_API_KEY" },
   { pattern: /openai\.com/i, envKey: "OPENAI_API_KEY" },
   { pattern: /huggingface\.co/i, envKey: "HF_TOKEN" },
+  { pattern: /regolo\.ai/i, envKey: "REGOLO_API_KEY" },
 ];
 
 interface ChatHandle {
@@ -351,7 +353,14 @@ function sendMessageViaCli(
   // buildHermesEnv returns NodeJS.ProcessEnv which has `string | undefined`
   // values. Widen to a plain dict here before we start setting our own
   // optional keys.
-  const rawEnv = buildHermesEnv({ PYTHONUNBUFFERED: "1" });
+  const rawEnv = buildHermesEnv({
+    PYTHONUNBUFFERED: "1",
+    // Suppress prompt_toolkit's NoConsoleScreenBufferError on Windows.
+    // The -Q flag should prevent interactive prompts, but prompt_toolkit
+    // may still probe for a console during import.
+    TERM: "dumb",
+    NO_COLOR: "1",
+  });
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(rawEnv)) {
     if (typeof v === "string") env[k] = v;
@@ -379,6 +388,7 @@ function sendMessageViaCli(
     "VOICE_TOOLS_OPENAI_KEY",
     "TINKER_API_KEY",
     "WANDB_API_KEY",
+    "REGOLO_API_KEY",
   ];
   for (const key of KNOWN_API_KEYS) {
     if (profileEnv[key] && !env[key]) {
@@ -422,6 +432,9 @@ function sendMessageViaCli(
   const proc = processRunner.spawnStreaming(cmd.command, args, {
     cwd: runtime.hermesRepo,
     env,
+    // On Windows, spawn via cmd.exe so the child gets a console buffer.
+    // Without this, prompt_toolkit crashes with NoConsoleScreenBufferError.
+    shell: adapter.platform === "windows",
     onStdout: (text) => {
       const stripped = stripAnsi(text);
       outputBuffer += stripped;
