@@ -358,9 +358,22 @@ export async function startDevServer(): Promise<boolean> {
   const port = getSavedPort();
   const npm = await findNpm();
 
+  // NEXT_TELEMETRY_DISABLED=1 suppresses the Next.js telemetry banner in the
+  // streamed dev-server logs so users aren't prompted to opt in/out on every
+  // start. It does NOT suppress the "inferred your workspace root" warning
+  // caused by a stray `%USERPROFILE%\package-lock.json`: that warning is
+  // controlled by `outputFileTracingRoot` / `turbopack.root` in Claw3D's
+  // own `next.config.js` and cannot be overridden from our side. Tracked
+  // as M1.1-#010; requires an upstream PR to `fathah/hermes-office`. See
+  // docs/DEVELOPER_WORKFLOW.md §"Known warnings — Claw3D workspace root"
+  // and docs/windows/CLAW3D_UPSTREAM_ISSUE_DRAFT.md.
   const proc = processRunner.spawnStreaming(npm, ["run", "dev"], {
     cwd: HERMES_OFFICE_DIR,
-    env: buildHermesEnv({ TERM: "dumb", PORT: String(port) }),
+    env: buildHermesEnv({
+      TERM: "dumb",
+      PORT: String(port),
+      NEXT_TELEMETRY_DISABLED: "1",
+    }),
     // Detached because the Claw3D dev server is long-lived and should
     // survive desktop-app restarts. killTree cleans it up on explicit stop.
     detached: true,

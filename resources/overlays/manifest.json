@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "hermesAgentPinnedSha": "79aeaa97e6d3b5065e10231e1733d656ab40f7a7",
+  "description": "Pan Desktop post-install overlays applied to upstream Hermes Agent files that have Unix-only assumptions. Each overlay is applied only when the target file's SHA256 matches the 'upstreamSha256' below (pristine upstream). Drift is detected and skipped with a warning. See M1.1-#008 (fcntl) and M1.1-#009 (AF_UNIX / /tmp paths) for rationale.",
+  "overlays": [
+    {
+      "target": "tools/memory_tool.py",
+      "upstreamSha256": "7ce7709cce9faa1586c97fad401f5616fb525204a53c56f047f37e2e7155865f",
+      "overlaySha256": "9eda5efd06372c592427f7af27a98eb9e8285f468e971ad742336cce3a196104",
+      "overlayFile": "tools/memory_tool.py",
+      "reason": "fcntl -> msvcrt for Windows file locking (mirrors cron/scheduler.py:19-27 pattern already in upstream).",
+      "upstreamIssue": "https://github.com/NousResearch/hermes-agent/issues/TBD",
+      "ticket": "M1.1-#008"
+    },
+    {
+      "target": "tools/_ipc.py",
+      "upstreamSha256": "",
+      "overlaySha256": "94b8e412638f73dc5138792a2f77a00c973378021af23d00d9f2ad8d6bf6ee64",
+      "overlayFile": "tools/_ipc.py",
+      "reason": "Helper module for AF_UNIX<->AF_PIPE cross-platform IPC (new file, not in upstream).",
+      "upstreamIssue": "",
+      "ticket": "M1.1-#009",
+      "mode": "create"
+    },
+    {
+      "target": "tools/code_execution_tool.py",
+      "upstreamSha256": "ff7805d14da27fa7e88b04543e18ea12eb0297f34fca35cc5e9925c64343a50b",
+      "overlaySha256": "bdfc730d20f101b6e15111973f967be876b6a6c6395f3fc2806697b748491cf5",
+      "overlayFile": "tools/code_execution_tool.py",
+      "reason": "AF_UNIX -> multiprocessing.connection (AF_PIPE on Windows) with per-invocation authkey propagated via env, not argv. Pops HERMES_IPC_* from os.environ after Client connect so grandchild subprocesses cannot inherit the credentials. Also flips SANDBOX_AVAILABLE so the code-execution sandbox works on Windows.",
+      "upstreamIssue": "https://github.com/NousResearch/hermes-agent/issues/TBD",
+      "ticket": "M1.1-#009"
+    },
+    {
+      "target": "environments/tool_context.py",
+      "upstreamSha256": "18b182bd2aaaeb161901c739b6db1314ce3e3aec087217379ecc8ff4d4ea71df",
+      "overlaySha256": "ebec7b33eca68174432fb8dc6c8543ec756548ee3b35d1d55a8810ad288e96c6",
+      "overlayFile": "environments/tool_context.py",
+      "reason": "Add PID suffix to the POSIX /tmp upload buffer path to avoid concurrent-upload collisions. Note: the path stays /tmp literally because it is a POSIX path interpreted by the REMOTE sandbox's bash via self.terminal(), not a host filesystem path. Pan Desktop runs on a Windows host, but the sandbox is always Linux.",
+      "upstreamIssue": "https://github.com/NousResearch/hermes-agent/issues/TBD",
+      "ticket": "M1.1-#009"
+    }
+  ]
+}

@@ -10,8 +10,10 @@ files:
   - "!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}"
   - "!{.env,.env.*,.npmrc,pnpm-lock.yaml}"
   - "!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}"
-asarUnpack:
-  - resources/**
+# Note: no asarUnpack for resources/** — nothing under resources/ ships
+# inside app.asar. install.ps1 (the only file in resources/) is delivered
+# via extraResources below, which copies it to process.resourcesPath
+# outside the asar entirely. Closes M1.1-#006.
 extraResources:
   # Ship the vendored Hermes Agent PowerShell installer alongside the app.
   # At runtime the Windows install strategy resolves it via
@@ -21,6 +23,15 @@ extraResources:
   # supply-chain rationale.
   - from: resources/install.ps1
     to: install.ps1
+  # M1.1-#008 / #009: ship the Python overlay bundle that patches upstream
+  # Hermes Agent's POSIX-only assumptions (fcntl file locking, AF_UNIX RPC
+  # transport, /tmp file-upload path). Applied post-install by
+  # `overlayApplicator.ts` with SHA256 match-before-replace drift
+  # detection. See `resources/overlays/manifest.json` for the ticket map.
+  - from: resources/overlays
+    to: overlays
+    filter:
+      - "**/*"
 win:
   executableName: pan-desktop
   requestedExecutionLevel: asInvoker
@@ -73,10 +84,39 @@ appImage:
 # CI, not on Linux hosts. Dev-loop cross-build on Linux still works via
 # npm_config_runtime/platform/arch/target env vars — see DEVELOPER_WORKFLOW.md.
 npmRebuild: true
+# =============================================================================
+# publish — electron-updater release channel
+#
+# M1.1-#002 (2026-04-12): switched from the broken `generic` provider pointed
+# at GitLab Pages to the `github` provider pointed at the GitHub mirror.
+#
+# Why github, not gitlab:
+#   electron-updater has no `gitlab` provider. The supported providers are
+#   generic, github, s3, spaces, bitbucket, keygen. Generic-against-GitLab-Pages
+#   was the prior attempt and failed (broken URL, silent first-launch failures).
+#
+# Why the mirror:
+#   GitLab (git.euraika.net/euraika/pan-desktop) stays the source of truth for
+#   code and MRs. The GitHub mirror (github.com/Euraika-Labs/pan-desktop) is the
+#   binary distribution edge — zero hosting cost, unlimited public-release
+#   bandwidth, and native blockmap delta + channel support via electron-updater.
+#   GitLab CI pushes `v*` tags to the mirror; GitHub Actions builds and publishes
+#   the installers from there. See .gitlab-ci.yml + .github/workflows/release.yml.
+#
+# UAC caveat:
+#   Pan Desktop ships unsigned (M1.1-#001 code signing closed as won't-fix,
+#   2026-04-12). Because NsisUpdater can only apply updates silently when the
+#   new installer's Authenticode signature matches the installed version,
+#   unsigned builds trigger a UAC prompt on every auto-update. This is
+#   acceptable for pre-1.0 betas and is documented for users in README.md.
+#   The code just does the wiring.
+#
+# See: docs/DECISIONS_M1.md §5, M1.1-#002 ticket.
+# =============================================================================
 publish:
-  # Generic provider pointing at GitLab Pages (see docs/DECISIONS_M1.md §5).
-  # URL is a placeholder until GitLab Pages is enabled for the pan-desktop project.
-  # Track: external unblocker #3 in DECISIONS_M1.md §9.
-  provider: generic
-  url: https://pan-desktop.euraika.net/releases/
-  channel: latest
+  provider: github
+  owner: Euraika-Labs
+  repo: pan-desktop
+  releaseType: release
+  vPrefixedTagName: true
+  publishAutoUpdate: true
