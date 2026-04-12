@@ -14,7 +14,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["src/main/**/*.test.ts"],
+    include: ["src/main/**/*.test.ts", "tests/**/*.test.ts"],
     exclude: ["**/node_modules/**", "**/dist/**", "**/out/**"],
     // Most tests should complete in under 1s. Longer runs are probably
     // accidental real subprocess spawns that should be mocked instead.

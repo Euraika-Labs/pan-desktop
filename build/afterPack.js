@@ -3,9 +3,11 @@ const { execSync } = require("child_process");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { createHash } = require("crypto");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { readFileSync, writeFileSync, existsSync } = require("fs");
+const { readFileSync, writeFileSync, existsSync, unlinkSync } = require("fs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const path = require("path");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const os = require("os");
 
 exports.default = async function afterPack(context) {
   const platform = context.electronPlatformName;
@@ -64,6 +66,80 @@ exports.default = async function afterPack(context) {
         `[afterPack] install.ps1 not found at ${scriptPath} — skipping hash`,
       );
     }
+
+    // M1.1-#011: inject a longPathAware manifest into the Windows exe so
+    // paths longer than 260 characters work without the registry override.
+    // Requires mt.exe (shipped with Windows SDK / Visual Studio). If mt.exe
+    // is not available the step is skipped gracefully — the app still runs,
+    // just without the long-path fuse.
+    //
+    // Registry equivalent (machine-wide): HKLM\SYSTEM\CurrentControlSet\
+    //   Control\FileSystem → LongPathsEnabled = 1 (requires admin + reboot).
+    // The manifest approach is per-exe and needs no elevated privileges.
+    const exeName = `${context.packager.appInfo.productFilename}.exe`;
+    const exePath = path.join(context.appOutDir, exeName);
+
+    if (existsSync(exePath)) {
+      // Locate mt.exe — prefer the path from the environment, then fall back
+      // to the canonical Windows SDK location used by GitHub Actions runners.
+      const mtCandidates = [
+        process.env.MT_EXE,
+        "mt.exe", // already on PATH (e.g. VS Developer Command Prompt)
+        "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\x64\\mt.exe",
+        "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.22621.0\\x64\\mt.exe",
+        "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.19041.0\\x64\\mt.exe",
+      ].filter(Boolean);
+
+      let mtExe = null;
+      for (const candidate of mtCandidates) {
+        try {
+          execSync(`"${candidate}" -?`, { stdio: "ignore" });
+          mtExe = candidate;
+          break;
+        } catch {
+          // not available at this path, try next
+        }
+      }
+
+      if (!mtExe) {
+        console.warn(
+          "[afterPack] mt.exe not found — skipping longPathAware manifest injection. " +
+            "Install Windows SDK or set MT_EXE env var to enable.",
+        );
+      } else {
+        const manifestXml = [
+          '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+          "<assembly xmlns=\"urn:schemas-microsoft-com:asm.v1\" manifestVersion=\"1.0\">",
+          "  <application xmlns=\"urn:schemas-microsoft-com:asm.v3\">",
+          "    <windowsSettings>",
+          "      <longPathAware xmlns=\"http://schemas.microsoft.com/SMI/2016/WindowsSettings\">true</longPathAware>",
+          "    </windowsSettings>",
+          "  </application>",
+          "</assembly>",
+        ].join("\n");
+
+        const tmpManifest = path.join(os.tmpdir(), `pan-desktop-longpath-${Date.now()}.manifest`);
+        try {
+          writeFileSync(tmpManifest, manifestXml, "utf8");
+          // Resource type 24 (RT_MANIFEST), resource ID 1 (exe manifest).
+          execSync(
+            `"${mtExe}" -nologo -manifest "${tmpManifest}" -outputresource:"${exePath}";1`,
+            { stdio: "inherit" },
+          );
+          console.log("[afterPack] longPathAware manifest injected into", exeName);
+        } catch (err) {
+          console.error("[afterPack] mt.exe manifest injection failed:", err.message);
+          // Non-fatal: a failed injection must not break the build.
+        } finally {
+          try { unlinkSync(tmpManifest); } catch { /* ignore cleanup errors */ }
+        }
+      }
+    } else {
+      console.warn(
+        `[afterPack] exe not found at ${exePath} — skipping longPathAware manifest injection`,
+      );
+    }
+
     return;
   }
 
