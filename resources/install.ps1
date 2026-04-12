@@ -41,6 +41,13 @@ param(
     [switch]$NoVenv,
     [switch]$SkipSetup,
     [string]$Branch = "main",
+    # Pan Desktop pin: when -Ref is passed, we clone at $Branch then
+    # `git checkout $Ref` to the pinned commit SHA (or tag). This is how
+    # Pan Desktop locks the installed tree to a specific upstream commit
+    # so our Python overlays in resources/overlays/ match their expected
+    # upstreamSha256 values and don't drift-skip. See
+    # docs/M1_1_TICKETS.md M1.1-#008/#009.
+    [string]$Ref = "",
     [string]$HermesHome = "$env:LOCALAPPDATA\hermes",
     [string]$InstallDir = "$env:LOCALAPPDATA\hermes\hermes-agent"
 )
@@ -524,7 +531,28 @@ function Install-Repository {
             throw "Failed to download repository (tried git clone SSH, HTTPS, and ZIP)"
         }
     }
-    
+
+    # Pan Desktop pin: if -Ref was passed, check out that exact commit (or
+    # tag) AFTER clone. We clone the default branch first so git has a
+    # real working tree, then `git fetch origin $Ref` in case the ref
+    # isn't a branch head, then `git checkout -q $Ref --` to land on it.
+    # If the ZIP fallback ran (re-init'd a shallow git repo), this also
+    # works because the remote is set. On failure we bail loudly rather
+    # than silently installing the wrong commit, because drifted overlays
+    # would be worse than a loud error.
+    if ($Ref -ne "") {
+        Write-Info "Pinning repository to ref: $Ref"
+        Push-Location $InstallDir
+        git -c windows.appendAtomically=false fetch origin $Ref 2>$null
+        git -c windows.appendAtomically=false checkout -q $Ref -- 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Pop-Location
+            throw "Failed to check out pinned ref '$Ref'. The upstream repository may no longer contain this commit."
+        }
+        Write-Success "Pinned to $Ref"
+        Pop-Location
+    }
+
     # Set per-repo config (harmless if it fails)
     Push-Location $InstallDir
     git -c windows.appendAtomically=false config windows.appendAtomically false 2>$null

@@ -17,9 +17,10 @@ Pan Desktop walks through installing, configuring, and chatting with Hermes Agen
 
 ## Install
 
-> Pan Desktop is in early development. Releases are hosted at
-> `https://pan-desktop.euraika-labs.net/releases/` (GitLab Pages, pending setup).
-> Until that channel is live, download builds directly from CI artifacts.
+> Pan Desktop is in early development. Releases are published to the GitHub
+> mirror at https://github.com/Euraika-Labs/pan-desktop/releases. GitLab remains
+> the source of truth for code; GitHub is where binary installers live for
+> electron-updater to consume.
 
 | Platform | File                                                                    |
 | -------- | ----------------------------------------------------------------------- |

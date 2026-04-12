@@ -1,4 +1,6 @@
-provider: generic
-url: https://pan-desktop.euraika.net/releases/
-channel: latest
+# Used by electron-updater in dev mode. Must match electron-builder.yml
+# `publish:` block in production. See M1.1-#002.
+owner: Euraika-Labs
+repo: pan-desktop
+provider: github
 updaterCacheDirName: pan-desktop-updater
