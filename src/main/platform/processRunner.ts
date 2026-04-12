@@ -60,6 +60,12 @@ export interface SpawnStreamingOptions {
    * inherit the parent's stdio streams can pass `"ignore"` to fully detach.
    */
   stdio?: SpawnOptions["stdio"];
+  /**
+   * If true, spawn via the system shell (cmd.exe on Windows, /bin/sh on
+   * Unix). Needed when the child process requires a console buffer — e.g.
+   * prompt_toolkit on Windows crashes without one.
+   */
+  shell?: boolean;
 }
 
 export interface KillTreeOptions {
@@ -255,11 +261,10 @@ export function createProcessRunner(
     const spawnOpts: SpawnOptions = {
       cwd: opts.cwd,
       env: opts.env,
-      // shell:false is the default. We flip to true ONLY for .cmd/.bat
-      // on Windows (Node CVE-2024-27980 fix refuses to spawn those
-      // directly and throws EINVAL). All other commands stay outside
-      // the shell.
-      shell: useShell,
+      // shell:false is the default. We flip to true for .cmd/.bat on
+      // Windows (Node CVE-2024-27980) OR when the caller explicitly
+      // requests it (e.g. to give prompt_toolkit a console buffer).
+      shell: opts.shell || useShell,
       windowsHide: true,
       stdio,
       // `detached` is caller-opt-in. Default false: child dies with parent

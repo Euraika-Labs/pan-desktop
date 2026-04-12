@@ -4488,3 +4488,339 @@ body {
   background: var(--selection);
   color: var(--text-primary);
 }
+/* ========================================================================
+   APPROVAL MODAL
+   ======================================================================== */
+.approval-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 400;
+  padding: 24px;
+  animation: approval-fade-in 120ms ease-out;
+}
+
+@keyframes approval-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.approval-modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-lg);
+  width: 560px;
+  max-width: 100%;
+  max-height: 90vh;
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: approval-scale-in 140ms ease-out;
+}
+
+@keyframes approval-scale-in {
+  from {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.approval-modal.approval-level-1 {
+  border: 1.5px solid var(--warning);
+  box-shadow:
+    0 24px 72px rgba(0, 0, 0, 0.55),
+    0 0 0 1px var(--warning-bg);
+}
+
+.approval-modal.approval-level-2 {
+  border: 2px solid var(--error);
+  box-shadow:
+    0 24px 72px rgba(0, 0, 0, 0.6),
+    0 0 0 4px var(--error-bg);
+}
+
+.approval-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.approval-modal.approval-level-1 .approval-modal-header {
+  background: var(--warning-bg);
+}
+
+.approval-modal.approval-level-2 .approval-modal-header {
+  background: var(--error-bg);
+}
+
+.approval-modal-header-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.approval-modal.approval-level-1 .approval-modal-header-icon {
+  color: var(--warning);
+}
+
+.approval-modal.approval-level-2 .approval-modal-header-icon {
+  color: var(--error);
+}
+
+.approval-modal-title {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  font-family: var(--font-sans);
+}
+
+.approval-modal.approval-level-2 .approval-modal-title {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.approval-modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+}
+
+.approval-modal-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.approval-modal-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+
+.approval-modal-description {
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.approval-modal-command {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text-primary);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.approval-modal-command code {
+  font-family: inherit;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.approval-modal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.approval-modal-pattern-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-bright);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  text-transform: none;
+}
+
+.approval-modal.approval-level-2 .approval-modal-pattern-tag {
+  background: var(--error-bg);
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.approval-modal-reason {
+  background: var(--error-bg);
+  border-left: 3px solid var(--error);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.approval-modal-reason strong {
+  color: var(--error);
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+.approval-modal-phrase-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.approval-modal-phrase-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.approval-modal-phrase-label code {
+  display: inline-block;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--error);
+  font-weight: 700;
+  margin-left: 2px;
+}
+
+.approval-modal-phrase-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-primary);
+  border: 1.5px solid var(--border-bright);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color var(--transition);
+}
+
+.approval-modal-phrase-input:focus {
+  border-color: var(--error);
+}
+
+.approval-modal-phrase-input[aria-invalid="true"] {
+  border-color: var(--warning);
+}
+
+.approval-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+
+.approval-modal-btn-cancel,
+.approval-modal-btn-confirm,
+.approval-modal-btn-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: var(--font-sans);
+  line-height: 1;
+}
+
+.approval-modal-btn-cancel {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border-bright);
+}
+
+.approval-modal-btn-cancel:hover {
+  background: var(--bg-hover);
+}
+
+.approval-modal-btn-cancel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.approval-modal-btn-preview {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border-bright);
+  margin-right: auto;
+}
+
+.approval-modal-btn-preview:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.approval-modal.approval-level-1 .approval-modal-btn-confirm {
+  background: var(--warning);
+  color: #1a1a1a;
+  border-color: var(--warning);
+}
+
+.approval-modal.approval-level-1 .approval-modal-btn-confirm:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.approval-modal.approval-level-2 .approval-modal-btn-confirm {
+  background: var(--error);
+  color: #ffffff;
+  border-color: var(--error);
+}
+
+.approval-modal.approval-level-2 .approval-modal-btn-confirm:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.approval-modal-btn-confirm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.approval-modal-btn-confirm:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+

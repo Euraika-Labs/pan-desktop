@@ -1,16 +1,9 @@
-# Upstream issue draft — Claw3D (`fathah/hermes-office`)
+## `next.config.js` should pin `outputFileTracingRoot` to `__dirname` to prevent parent-lockfile detection
 
-**Status:** Draft, not yet filed. File against `https://github.com/fathah/hermes-office/issues` when ready.
-**Tracking ticket (Pan Desktop side):** M1.1-#010
-**Last updated:** 2026-04-11
+**Repository:** https://github.com/fathah/hermes-office
+**Labels:** bug, windows
 
 ---
-
-## Title
-
-`next.config.js should pin outputFileTracingRoot to __dirname to prevent parent-lockfile detection`
-
-## Body
 
 ### Summary
 
@@ -19,7 +12,7 @@ When Claw3D's Next.js dev server is launched from a host process whose working d
 ```
  ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
  We detected multiple lockfiles and selected the directory of
- C:\Users\bertc\package-lock.json as the root directory.
+ C:\Users\<username>\package-lock.json as the root directory.
  Consider adjusting `outputFileTracingRoot` or the `root` directory of your
  Turbopack config to the root of your application.
 ```
@@ -28,9 +21,9 @@ The inferred root is wrong: Claw3D's actual root is its own directory (where its
 
 1. `outputFileTracingRoot` defaults to the wrong directory, which bloats tracing scope and can include arbitrary files from the user's home.
 2. Turbopack's resolver walks the wrong tree, which can cause confusing module-resolution errors when the parent directory happens to contain other Node projects.
-3. Embedding apps that ship Claw3D as a subprocess (e.g. [Pan Desktop](https://git.euraika.net/euraika/pan-desktop)) cannot override this from their side — **there is no env var or CLI flag for `outputFileTracingRoot`**, it is `next.config.js`-only. The fix has to live in this repo.
+3. Embedding apps that ship Claw3D as a subprocess cannot override this from their side — **there is no env var or CLI flag for `outputFileTracingRoot`**, it is `next.config.js`-only. The fix must live in this repo.
 
-### Reproduction
+### Steps to reproduce
 
 1. On a Windows 11 machine, create a stray lockfile at the user's home directory (this happens naturally on many machines because some tools `npm install` into `%USERPROFILE%`):
 
@@ -38,7 +31,7 @@ The inferred root is wrong: Claw3D's actual root is its own directory (where its
    echo '{}' > $env:USERPROFILE\package-lock.json
    ```
 
-2. Clone `hermes-office` somewhere deeper in the filesystem, e.g. `C:\Users\bertc\AppData\Roaming\.pan-desktop\hermes-office\`.
+2. Clone this repo somewhere deeper in the filesystem, e.g. `C:\Users\<username>\AppData\Roaming\.pan-desktop\hermes-office\`.
 
 3. Run `npm install && npm run dev` from inside the clone.
 
@@ -50,7 +43,7 @@ The inferred root is wrong: Claw3D's actual root is its own directory (where its
 
 ### Proposed fix
 
-Pin both `outputFileTracingRoot` and `turbopack.root` to `__dirname` in `next.config.js`. This is 4 lines of code:
+Pin both `outputFileTracingRoot` and `turbopack.root` to `__dirname` in `next.config.js`. This is 4 lines of config:
 
 ```js
 // next.config.js
@@ -90,9 +83,9 @@ export default {
 
 ### Why this matters for downstream embedders
 
-Pan Desktop ships Claw3D as a spawned subprocess (`npm run dev` + `npm run hermes-adapter`). We have no way to override `outputFileTracingRoot` from the spawn environment — we've verified there is no supported env var or CLI flag, and Next.js's own source confirms this option is read from the config module only. That means every Pan Desktop user on Windows who has a stray parent lockfile sees this warning on every app start, and we have no workaround except "tell users to delete their parent lockfile", which is unfriendly.
+Some applications ship Claw3D as a spawned subprocess (`npm run dev` + `npm run hermes-adapter`). Those embedders have no way to override `outputFileTracingRoot` from the spawn environment — there is no supported env var or CLI flag, and Next.js's own source confirms this option is read from the config module only. That means every end-user on Windows who has a stray parent lockfile sees this warning on every app start, with no available workaround short of "delete your parent lockfile", which is unfriendly.
 
-A 4-line change in this repo silently fixes it for every consumer, forever.
+A 4-line change in this repo silently fixes it for every consumer.
 
 ### References
 
@@ -102,15 +95,11 @@ A 4-line change in this repo silently fixes it for every consumer, forever.
 - Next.js docs: [`outputFileTracingRoot`](https://nextjs.org/docs/app/api-reference/next-config-js/output#caveats)
 - Next.js docs: [`turbopack.root`](https://nextjs.org/docs/app/api-reference/next-config-js/turbopack)
 
-### Checklist for the PR author
+### PR checklist
 
 - [ ] Pin `outputFileTracingRoot: __dirname` in `next.config.{js,mjs}`
 - [ ] Pin `turbopack.root: __dirname` in the same config
 - [ ] If config is ESM, derive `__dirname` via `fileURLToPath(import.meta.url)`
-- [ ] Verify `npm run dev` from inside the repo no longer emits the "inferred workspace root" warning (test with a stray `~/package-lock.json` present)
-- [ ] Verify `npm run build` still produces the same output tree (no new files under `.next/standalone/..`, no missing traced files)
-- [ ] Add a comment in `next.config.js` explaining WHY the pin exists (drive-by readers will otherwise remove it)
-
----
-
-*This draft was authored as part of Pan Desktop ticket M1.1-#010. It lives at `docs/windows/CLAW3D_UPSTREAM_ISSUE_DRAFT.md` in the `git.euraika.net/euraika/pan-desktop` repo for tracking until filed.*
+- [ ] Verify `npm run dev` no longer emits the "inferred workspace root" warning when a stray `~/package-lock.json` is present
+- [ ] Verify `npm run build` still produces the same output tree (no extra files under `.next/standalone/`, no missing traced files)
+- [ ] Add a comment in the config explaining why the pin exists, so future readers don't remove it

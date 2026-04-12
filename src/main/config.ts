@@ -163,10 +163,19 @@ export function getModelConfig(profile?: string): {
   const modelMatch = content.match(/^\s*default:\s*["']?([^"'\n#]+)["']?/m);
   const baseUrlMatch = content.match(/^\s*base_url:\s*["']?([^"'\n#]+)["']?/m);
 
+  let provider = providerMatch ? providerMatch[1].trim() : defaults.provider;
+  const baseUrl = baseUrlMatch ? baseUrlMatch[1].trim() : defaults.baseUrl;
+
+  // Reverse-map: if Hermes CLI has "custom" but the base URL is Regolo,
+  // report "regolo" so the UI dropdown shows the correct selection.
+  if (provider === "custom" && /regolo\.ai/i.test(baseUrl)) {
+    provider = "regolo";
+  }
+
   const result = {
-    provider: providerMatch ? providerMatch[1].trim() : defaults.provider,
+    provider,
     model: modelMatch ? modelMatch[1].trim() : defaults.model,
-    baseUrl: baseUrlMatch ? baseUrlMatch[1].trim() : defaults.baseUrl,
+    baseUrl,
   };
 
   setCache(cacheKey, result);
@@ -185,9 +194,14 @@ export function setModelConfig(
 
   let content = readFileSync(configFile, "utf-8");
 
+  // Map UI provider names to Hermes CLI-compatible values.
+  // "regolo" is a Pan Desktop UI concept; Hermes CLI needs "custom".
+  const CLI_PROVIDER_MAP: Record<string, string> = { regolo: "custom" };
+  const writeProvider = CLI_PROVIDER_MAP[provider] || provider;
+
   const providerRegex = /^(\s*provider:\s*)["']?[^"'\n#]*["']?/m;
   if (providerRegex.test(content)) {
-    content = content.replace(providerRegex, `$1"${provider}"`);
+    content = content.replace(providerRegex, `$1"${writeProvider}"`);
   }
 
   const modelRegex = /^(\s*default:\s*)["']?[^"'\n#]*["']?/m;

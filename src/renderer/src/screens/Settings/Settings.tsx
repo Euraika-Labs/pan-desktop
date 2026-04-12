@@ -502,7 +502,9 @@ function Settings({
             onChange={(e) => {
               const provider = e.target.value;
               setModelProvider(provider);
-              if (provider === "custom" && !modelBaseUrl) {
+              if (provider === "regolo") {
+                setModelBaseUrl("https://api.regolo.ai/v1");
+              } else if (provider === "custom" && !modelBaseUrl) {
                 setModelBaseUrl("http://localhost:1234/v1");
               }
             }}

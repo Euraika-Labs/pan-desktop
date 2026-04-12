@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, appendFileSync } from "fs";
 import { join } from "path";
 import http from "http";
-import { runtime, processRunner } from "./runtime/instance";
+import { runtime, processRunner, adapter } from "./runtime/instance";
 import type { ChildProcess } from "./platform/processRunner";
 import { buildHermesEnv } from "./installer";
 import { getModelConfig, readEnv } from "./config";
@@ -17,6 +17,7 @@ const ERROR_BODY_TRUNCATE_LENGTH = 200;
 
 const LOCAL_PROVIDERS = new Set([
   "custom",
+  "regolo",
   "lmstudio",
   "ollama",
   "vllm",
@@ -29,6 +30,7 @@ const URL_KEY_MAP: Array<{ pattern: RegExp; envKey: string }> = [
   { pattern: /anthropic\.com/i, envKey: "ANTHROPIC_API_KEY" },
   { pattern: /openai\.com/i, envKey: "OPENAI_API_KEY" },
   { pattern: /huggingface\.co/i, envKey: "HF_TOKEN" },
+  { pattern: /regolo\.ai/i, envKey: "REGOLO_API_KEY" },
 ];
 
 interface ChatHandle {
@@ -87,6 +89,15 @@ platforms:
 //  HTTP API streaming (fast path — no process spawn)
 // ────────────────────────────────────────────────────
 
+export interface ApprovalRequest {
+  id: string;
+  level: 1 | 2;
+  command: string;
+  patternKey: string;
+  description: string;
+  reason: string;
+}
+
 export interface ChatCallbacks {
   onChunk: (text: string) => void;
   onDone: (sessionId?: string) => void;
@@ -97,6 +108,7 @@ export interface ChatCallbacks {
     completionTokens: number;
     totalTokens: number;
   }) => void;
+  onApprovalRequest?: (request: ApprovalRequest) => void;
 }
 
 function sendMessageViaApi(
@@ -204,6 +216,21 @@ function sendMessageViaApi(
     }
     try {
       const parsed = JSON.parse(data);
+
+      // Approval request event (Pan Desktop overlay on Hermes gateway)
+      if (parsed.type === "approval_required" && parsed.id) {
+        if (callbacks.onApprovalRequest) {
+          callbacks.onApprovalRequest({
+            id: String(parsed.id),
+            level: parsed.level === 2 ? 2 : 1,
+            command: String(parsed.command || ""),
+            patternKey: String(parsed.pattern_key || ""),
+            description: String(parsed.description || ""),
+            reason: String(parsed.reason || ""),
+          });
+        }
+        return false;
+      }
 
       // Capture error responses forwarded through SSE
       if (parsed.error) {
@@ -319,6 +346,46 @@ function sendMessageViaApi(
 }
 
 // ────────────────────────────────────────────────────
+//  Approval response — POST back to the Hermes gateway
+// ────────────────────────────────────────────────────
+
+export type ApprovalResponseType =
+  | "approved"
+  | "denied"
+  | "preview"
+  | "level2_approved";
+
+export function respondToApproval(
+  approvalId: string,
+  response: ApprovalResponseType,
+  phrase?: string,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const body = JSON.stringify({
+      response,
+      ...(phrase ? { phrase } : {}),
+    });
+    const req = http.request(
+      `${HERMES_GATEWAY_URL}/v1/approvals/${encodeURIComponent(approvalId)}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        resolve(res.statusCode === 200);
+        res.resume();
+      },
+    );
+    req.on("error", () => resolve(false));
+    req.write(body);
+    req.end();
+  });
+}
+
+// ────────────────────────────────────────────────────
 //  CLI fallback (slow path — spawns process)
 // ────────────────────────────────────────────────────
 
@@ -351,7 +418,14 @@ function sendMessageViaCli(
   // buildHermesEnv returns NodeJS.ProcessEnv which has `string | undefined`
   // values. Widen to a plain dict here before we start setting our own
   // optional keys.
-  const rawEnv = buildHermesEnv({ PYTHONUNBUFFERED: "1" });
+  const rawEnv = buildHermesEnv({
+    PYTHONUNBUFFERED: "1",
+    // Suppress prompt_toolkit's NoConsoleScreenBufferError on Windows.
+    // The -Q flag should prevent interactive prompts, but prompt_toolkit
+    // may still probe for a console during import.
+    TERM: "dumb",
+    NO_COLOR: "1",
+  });
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(rawEnv)) {
     if (typeof v === "string") env[k] = v;
@@ -379,6 +453,7 @@ function sendMessageViaCli(
     "VOICE_TOOLS_OPENAI_KEY",
     "TINKER_API_KEY",
     "WANDB_API_KEY",
+    "REGOLO_API_KEY",
   ];
   for (const key of KNOWN_API_KEYS) {
     if (profileEnv[key] && !env[key]) {
@@ -422,6 +497,9 @@ function sendMessageViaCli(
   const proc = processRunner.spawnStreaming(cmd.command, args, {
     cwd: runtime.hermesRepo,
     env,
+    // On Windows, spawn via cmd.exe so the child gets a console buffer.
+    // Without this, prompt_toolkit crashes with NoConsoleScreenBufferError.
+    shell: adapter.platform === "windows",
     onStdout: (text) => {
       const stripped = stripAnsi(text);
       outputBuffer += stripped;
@@ -576,7 +654,12 @@ export function startGateway(profile?: string): boolean {
   // provider. buildHermesEnv supplies the base PATH/HOME/HERMES_HOME; we
   // layer the profile-specific env on top.
   const profileEnv = readEnv(profile);
-  const rawGatewayEnv = buildHermesEnv({ API_SERVER_ENABLED: "true" });
+  const rawGatewayEnv = buildHermesEnv({
+    API_SERVER_ENABLED: "true",
+    API_SERVER_PORT: "8642",
+    API_SERVER_HOST: "127.0.0.1",
+    GATEWAY_ALLOW_ALL_USERS: "true",
+  });
   const gatewayEnv: Record<string, string> = {};
   for (const [k, v] of Object.entries(rawGatewayEnv)) {
     if (typeof v === "string") gatewayEnv[k] = v;
@@ -594,7 +677,7 @@ export function startGateway(profile?: string): boolean {
   const gatewayCmd = runtime.buildCliCmd();
   gatewayProcess = processRunner.spawnStreaming(
     gatewayCmd.command,
-    [...gatewayCmd.args, "gateway"],
+    [...gatewayCmd.args, "gateway", "run", "--replace"],
     {
       cwd: runtime.hermesRepo,
       env: gatewayEnv,

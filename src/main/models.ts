@@ -84,6 +84,57 @@ export function removeModel(id: string): boolean {
   return true;
 }
 
+/**
+ * Sync models from a remote OpenAI-compatible /models endpoint.
+ * Adds any models not already in the library. Used for providers
+ * like Regolo where the full model catalog should be discoverable.
+ */
+export async function syncRemoteModels(
+  provider: string,
+  baseUrl: string,
+  apiKey?: string,
+): Promise<SavedModel[]> {
+  const url = `${baseUrl.replace(/\/+$/, "")}/models`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+  const response = await fetch(url, {
+    headers,
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) return [];
+
+  const data = (await response.json()) as {
+    data?: Array<{ id: string; name?: string }>;
+    models?: Array<{ id: string; name?: string }>;
+  };
+  const remoteModels = data.data || data.models || [];
+  if (!Array.isArray(remoteModels)) return [];
+
+  const existing = readModels();
+  let added = false;
+  for (const remote of remoteModels) {
+    const exists = existing.some(
+      (entry) => entry.model === remote.id && entry.provider === provider,
+    );
+    if (!exists) {
+      existing.push({
+        id: randomUUID(),
+        name: remote.name || remote.id,
+        provider,
+        model: remote.id,
+        baseUrl,
+        createdAt: Date.now(),
+      });
+      added = true;
+    }
+  }
+  if (added) writeModels(existing);
+  return existing;
+}
+
 export function updateModel(
   id: string,
   fields: Partial<Pick<SavedModel, "name" | "provider" | "model" | "baseUrl">>,

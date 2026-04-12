@@ -30,6 +30,8 @@ import {
   isGatewayRunning,
   stopHealthPolling,
   restartGateway,
+  respondToApproval,
+  ApprovalResponseType,
 } from "./hermes";
 import {
   getClaw3dStatus,
@@ -66,7 +68,13 @@ import {
   listCachedSessions,
   updateSessionTitle,
 } from "./session-cache";
-import { listModels, addModel, removeModel, updateModel } from "./models";
+import {
+  listModels,
+  addModel,
+  removeModel,
+  updateModel,
+  syncRemoteModels,
+} from "./models";
 import { fetchRemoteModels } from "./remoteModels";
 import {
   listProfiles,
@@ -103,6 +111,105 @@ import {
   getCrashDumpsPath,
   persistCrashLog,
 } from "./crashReports";
+import { migrateDesktopData } from "./runtime/dataMigration";
+import { adapter, runtime, getDesktop } from "./runtime/instance";
+import {
+  GET_INSTALL_INSTRUCTIONS,
+  CHECK_INSTALL,
+  START_INSTALL,
+  INSTALL_PROGRESS,
+  GET_HERMES_VERSION,
+  REFRESH_HERMES_VERSION,
+  RUN_HERMES_DOCTOR,
+  RUN_HERMES_UPDATE,
+  CHECK_OPENCLAW,
+  RUN_CLAW_MIGRATE,
+  GET_ENV,
+  SET_ENV,
+  GET_CONFIG,
+  SET_CONFIG,
+  GET_HERMES_HOME,
+  GET_MODEL_CONFIG,
+  SET_MODEL_CONFIG,
+  SEND_MESSAGE,
+  ABORT_CHAT,
+  CHAT_CHUNK,
+  CHAT_DONE,
+  CHAT_ERROR,
+  CHAT_TOOL_PROGRESS,
+  CHAT_USAGE,
+  START_GATEWAY,
+  STOP_GATEWAY,
+  GATEWAY_STATUS,
+  GET_PLATFORM_ENABLED,
+  SET_PLATFORM_ENABLED,
+  LIST_SESSIONS,
+  GET_SESSION_MESSAGES,
+  SEARCH_SESSIONS,
+  LIST_PROFILES,
+  CREATE_PROFILE,
+  DELETE_PROFILE,
+  SET_ACTIVE_PROFILE,
+  READ_MEMORY,
+  ADD_MEMORY_ENTRY,
+  UPDATE_MEMORY_ENTRY,
+  REMOVE_MEMORY_ENTRY,
+  WRITE_USER_PROFILE,
+  READ_SOUL,
+  WRITE_SOUL,
+  RESET_SOUL,
+  GET_TOOLSETS,
+  SET_TOOLSET_ENABLED,
+  LIST_INSTALLED_SKILLS,
+  LIST_BUNDLED_SKILLS,
+  GET_SKILL_CONTENT,
+  INSTALL_SKILL,
+  UNINSTALL_SKILL,
+  LIST_CACHED_SESSIONS,
+  SYNC_SESSION_CACHE,
+  UPDATE_SESSION_TITLE,
+  GET_CREDENTIAL_POOL,
+  SET_CREDENTIAL_POOL,
+  LIST_MODELS,
+  ADD_MODEL,
+  REMOVE_MODEL,
+  UPDATE_MODEL,
+  FETCH_REMOTE_MODELS,
+  SYNC_REMOTE_MODELS,
+  CLAW3D_STATUS,
+  CLAW3D_SETUP,
+  CLAW3D_SETUP_PROGRESS,
+  CLAW3D_GET_PORT,
+  CLAW3D_SET_PORT,
+  CLAW3D_GET_WS_URL,
+  CLAW3D_SET_WS_URL,
+  CLAW3D_START_ALL,
+  CLAW3D_STOP_ALL,
+  CLAW3D_GET_LOGS,
+  CLAW3D_START_DEV,
+  CLAW3D_STOP_DEV,
+  CLAW3D_START_ADAPTER,
+  CLAW3D_STOP_ADAPTER,
+  LIST_CRON_JOBS,
+  CREATE_CRON_JOB,
+  REMOVE_CRON_JOB,
+  PAUSE_CRON_JOB,
+  RESUME_CRON_JOB,
+  TRIGGER_CRON_JOB,
+  OPEN_EXTERNAL,
+  GET_APP_VERSION,
+  CHECK_FOR_UPDATES,
+  DOWNLOAD_UPDATE,
+  INSTALL_UPDATE,
+  UPDATE_AVAILABLE,
+  UPDATE_DOWNLOAD_PROGRESS,
+  UPDATE_DOWNLOADED,
+  UPDATE_ERROR,
+  MENU_NEW_CHAT,
+  MENU_SEARCH_SESSIONS,
+  CHAT_APPROVAL_REQUEST,
+  APPROVAL_RESPOND,
+} from "../shared/channels";
 
 // Wave 7: operational safety. Capture crash dumps locally with no upload,
 // so M1 users can attach the .dmp file to a bug report. The crashDumps
@@ -260,16 +367,16 @@ function createWindow(): void {
 
 function setupIPC(): void {
   // Installation
-  ipcMain.handle("get-install-instructions", () => getInstallInstructions());
+  ipcMain.handle(GET_INSTALL_INSTRUCTIONS, () => getInstallInstructions());
 
-  ipcMain.handle("check-install", () => {
+  ipcMain.handle(CHECK_INSTALL, () => {
     return checkInstallStatus();
   });
 
-  ipcMain.handle("start-install", async (event) => {
+  ipcMain.handle(START_INSTALL, async (event) => {
     try {
       await runInstall((progress: InstallProgress) => {
-        event.sender.send("install-progress", progress);
+        event.sender.send(INSTALL_PROGRESS, progress);
       });
       return { success: true };
     } catch (err) {
@@ -278,16 +385,16 @@ function setupIPC(): void {
   });
 
   // Hermes engine info
-  ipcMain.handle("get-hermes-version", async () => getHermesVersion());
-  ipcMain.handle("refresh-hermes-version", async () => {
+  ipcMain.handle(GET_HERMES_VERSION, async () => getHermesVersion());
+  ipcMain.handle(REFRESH_HERMES_VERSION, async () => {
     clearVersionCache();
     return getHermesVersion();
   });
-  ipcMain.handle("run-hermes-doctor", () => runHermesDoctor());
-  ipcMain.handle("run-hermes-update", async (event) => {
+  ipcMain.handle(RUN_HERMES_DOCTOR, () => runHermesDoctor());
+  ipcMain.handle(RUN_HERMES_UPDATE, async (event) => {
     try {
       await runHermesUpdate((progress: InstallProgress) => {
-        event.sender.send("install-progress", progress);
+        event.sender.send(INSTALL_PROGRESS, progress);
       });
       return { success: true };
     } catch (err) {
@@ -296,11 +403,11 @@ function setupIPC(): void {
   });
 
   // OpenClaw migration
-  ipcMain.handle("check-openclaw", () => checkOpenClawExists());
-  ipcMain.handle("run-claw-migrate", async (event) => {
+  ipcMain.handle(CHECK_OPENCLAW, () => checkOpenClawExists());
+  ipcMain.handle(RUN_CLAW_MIGRATE, async (event) => {
     try {
       await runClawMigrate((progress: InstallProgress) => {
-        event.sender.send("install-progress", progress);
+        event.sender.send(INSTALL_PROGRESS, progress);
       });
       return { success: true };
     } catch (err) {
@@ -309,10 +416,10 @@ function setupIPC(): void {
   });
 
   // Configuration (profile-aware)
-  ipcMain.handle("get-env", (_event, profile?: string) => readEnv(profile));
+  ipcMain.handle(GET_ENV, (_event, profile?: string) => readEnv(profile));
 
   ipcMain.handle(
-    "set-env",
+    SET_ENV,
     (_event, key: string, value: string, profile?: string) => {
       setEnvValue(key, value, profile);
       // Restart gateway so it picks up the new API key
@@ -327,28 +434,28 @@ function setupIPC(): void {
     },
   );
 
-  ipcMain.handle("get-config", (_event, key: string, profile?: string) =>
+  ipcMain.handle(GET_CONFIG, (_event, key: string, profile?: string) =>
     getConfigValue(key, profile),
   );
 
   ipcMain.handle(
-    "set-config",
+    SET_CONFIG,
     (_event, key: string, value: string, profile?: string) => {
       setConfigValue(key, value, profile);
       return true;
     },
   );
 
-  ipcMain.handle("get-hermes-home", (_event, profile?: string) =>
+  ipcMain.handle(GET_HERMES_HOME, (_event, profile?: string) =>
     getHermesHome(profile),
   );
 
-  ipcMain.handle("get-model-config", (_event, profile?: string) =>
+  ipcMain.handle(GET_MODEL_CONFIG, (_event, profile?: string) =>
     getModelConfig(profile),
   );
 
   ipcMain.handle(
-    "set-model-config",
+    SET_MODEL_CONFIG,
     (
       _event,
       provider: string,
@@ -375,7 +482,7 @@ function setupIPC(): void {
 
   // Chat — lazy-start gateway on first message
   ipcMain.handle(
-    "send-message",
+    SEND_MESSAGE,
     async (
       event,
       message: string,
@@ -407,23 +514,26 @@ function setupIPC(): void {
         {
           onChunk: (chunk) => {
             fullResponse += chunk;
-            event.sender.send("chat-chunk", chunk);
+            event.sender.send(CHAT_CHUNK, chunk);
           },
           onDone: (sessionId) => {
             currentChatAbort = null;
-            event.sender.send("chat-done", sessionId || "");
+            event.sender.send(CHAT_DONE, sessionId || "");
             resolveChat({ response: fullResponse, sessionId });
           },
           onError: (error) => {
             currentChatAbort = null;
-            event.sender.send("chat-error", error);
+            event.sender.send(CHAT_ERROR, error);
             rejectChat(new Error(error));
           },
           onToolProgress: (tool) => {
-            event.sender.send("chat-tool-progress", tool);
+            event.sender.send(CHAT_TOOL_PROGRESS, tool);
           },
           onUsage: (usage) => {
-            event.sender.send("chat-usage", usage);
+            event.sender.send(CHAT_USAGE, usage);
+          },
+          onApprovalRequest: (request) => {
+            event.sender.send(CHAT_APPROVAL_REQUEST, request);
           },
         },
         profile,
@@ -436,27 +546,37 @@ function setupIPC(): void {
     },
   );
 
-  ipcMain.handle("abort-chat", () => {
+  ipcMain.handle(ABORT_CHAT, () => {
     if (currentChatAbort) {
       currentChatAbort();
       currentChatAbort = null;
     }
   });
 
+  ipcMain.handle(
+    APPROVAL_RESPOND,
+    (
+      _event,
+      approvalId: string,
+      response: ApprovalResponseType,
+      phrase?: string,
+    ) => respondToApproval(approvalId, response, phrase),
+  );
+
   // Gateway
-  ipcMain.handle("start-gateway", () => startGateway());
-  ipcMain.handle("stop-gateway", () => {
+  ipcMain.handle(START_GATEWAY, () => startGateway());
+  ipcMain.handle(STOP_GATEWAY, () => {
     stopGateway(true);
     return true;
   });
-  ipcMain.handle("gateway-status", () => isGatewayRunning());
+  ipcMain.handle(GATEWAY_STATUS, () => isGatewayRunning());
 
   // Platform toggles (config.yaml platforms section)
-  ipcMain.handle("get-platform-enabled", (_event, profile?: string) =>
+  ipcMain.handle(GET_PLATFORM_ENABLED, (_event, profile?: string) =>
     getPlatformEnabled(profile),
   );
   ipcMain.handle(
-    "set-platform-enabled",
+    SET_PLATFORM_ENABLED,
     (_event, platform: string, enabled: boolean, profile?: string) => {
       setPlatformEnabled(platform, enabled, profile);
       // Restart gateway so it picks up the new platform config
@@ -468,111 +588,107 @@ function setupIPC(): void {
   );
 
   // Sessions
-  ipcMain.handle("list-sessions", (_event, limit?: number, offset?: number) => {
+  ipcMain.handle(LIST_SESSIONS, (_event, limit?: number, offset?: number) => {
     return listSessions(limit, offset);
   });
 
-  ipcMain.handle("get-session-messages", (_event, sessionId: string) => {
+  ipcMain.handle(GET_SESSION_MESSAGES, (_event, sessionId: string) => {
     return getSessionMessages(sessionId);
   });
 
   // Profiles
-  ipcMain.handle("list-profiles", async () => listProfiles());
-  ipcMain.handle("create-profile", (_event, name: string, clone: boolean) =>
+  ipcMain.handle(LIST_PROFILES, async () => listProfiles());
+  ipcMain.handle(CREATE_PROFILE, (_event, name: string, clone: boolean) =>
     createProfile(name, clone),
   );
-  ipcMain.handle("delete-profile", (_event, name: string) =>
-    deleteProfile(name),
-  );
-  ipcMain.handle("set-active-profile", (_event, name: string) => {
+  ipcMain.handle(DELETE_PROFILE, (_event, name: string) => deleteProfile(name));
+  ipcMain.handle(SET_ACTIVE_PROFILE, (_event, name: string) => {
     setActiveProfile(name);
     return true;
   });
 
   // Memory
-  ipcMain.handle("read-memory", (_event, profile?: string) =>
+  ipcMain.handle(READ_MEMORY, (_event, profile?: string) =>
     readMemory(profile),
   );
   ipcMain.handle(
-    "add-memory-entry",
+    ADD_MEMORY_ENTRY,
     (_event, content: string, profile?: string) =>
       addMemoryEntry(content, profile),
   );
   ipcMain.handle(
-    "update-memory-entry",
+    UPDATE_MEMORY_ENTRY,
     (_event, index: number, content: string, profile?: string) =>
       updateMemoryEntry(index, content, profile),
   );
   ipcMain.handle(
-    "remove-memory-entry",
+    REMOVE_MEMORY_ENTRY,
     (_event, index: number, profile?: string) =>
       removeMemoryEntry(index, profile),
   );
   ipcMain.handle(
-    "write-user-profile",
+    WRITE_USER_PROFILE,
     (_event, content: string, profile?: string) =>
       writeUserProfile(content, profile),
   );
 
   // Soul
-  ipcMain.handle("read-soul", (_event, profile?: string) => readSoul(profile));
-  ipcMain.handle("write-soul", (_event, content: string, profile?: string) => {
+  ipcMain.handle(READ_SOUL, (_event, profile?: string) => readSoul(profile));
+  ipcMain.handle(WRITE_SOUL, (_event, content: string, profile?: string) => {
     return writeSoul(content, profile);
   });
-  ipcMain.handle("reset-soul", (_event, profile?: string) =>
-    resetSoul(profile),
-  );
+  ipcMain.handle(RESET_SOUL, (_event, profile?: string) => resetSoul(profile));
 
   // Tools
-  ipcMain.handle("get-toolsets", (_event, profile?: string) =>
+  ipcMain.handle(GET_TOOLSETS, (_event, profile?: string) =>
     getToolsets(profile),
   );
   ipcMain.handle(
-    "set-toolset-enabled",
+    SET_TOOLSET_ENABLED,
     (_event, key: string, enabled: boolean, profile?: string) => {
       return setToolsetEnabled(key, enabled, profile);
     },
   );
 
   // Skills
-  ipcMain.handle("list-installed-skills", (_event, profile?: string) =>
+  ipcMain.handle(LIST_INSTALLED_SKILLS, (_event, profile?: string) =>
     listInstalledSkills(profile),
   );
-  ipcMain.handle("list-bundled-skills", () => listBundledSkills());
-  ipcMain.handle("get-skill-content", (_event, skillPath: string) =>
+  ipcMain.handle(LIST_BUNDLED_SKILLS, () => listBundledSkills());
+  ipcMain.handle(GET_SKILL_CONTENT, (_event, skillPath: string) =>
     getSkillContent(skillPath),
   );
   ipcMain.handle(
-    "install-skill",
+    INSTALL_SKILL,
     (_event, identifier: string, profile?: string) =>
       installSkill(identifier, profile),
   );
-  ipcMain.handle("uninstall-skill", (_event, name: string, profile?: string) =>
+  ipcMain.handle(UNINSTALL_SKILL, (_event, name: string, profile?: string) =>
     uninstallSkill(name, profile),
   );
 
   // Session cache (fast local cache with generated titles)
   ipcMain.handle(
-    "list-cached-sessions",
+    LIST_CACHED_SESSIONS,
     (_event, limit?: number, offset?: number) =>
       listCachedSessions(limit, offset),
   );
-  ipcMain.handle("sync-session-cache", () => syncSessionCache());
+  ipcMain.handle(SYNC_SESSION_CACHE, () => syncSessionCache());
   ipcMain.handle(
-    "update-session-title",
+    UPDATE_SESSION_TITLE,
     (_event, sessionId: string, title: string) =>
       updateSessionTitle(sessionId, title),
   );
 
   // Session search
-  ipcMain.handle("search-sessions", (_event, query: string, limit?: number) =>
+  ipcMain.handle(SEARCH_SESSIONS, (_event, query: string, limit?: number) =>
     searchSessions(query, limit),
   );
 
   // Credential Pool
-  ipcMain.handle("get-credential-pool", () => getCredentialPool());
+  ipcMain.handle(GET_CREDENTIAL_POOL, () => getCredentialPool());
   ipcMain.handle(
-    "set-credential-pool",
+    SET_CREDENTIAL_POOL,
     (
       _event,
       provider: string,
@@ -584,31 +700,36 @@ function setupIPC(): void {
   );
 
   // Models
-  ipcMain.handle("list-models", () => listModels());
+  ipcMain.handle(LIST_MODELS, () => listModels());
   ipcMain.handle(
-    "add-model",
+    ADD_MODEL,
     (_event, name: string, provider: string, model: string, baseUrl: string) =>
       addModel(name, provider, model, baseUrl),
   );
-  ipcMain.handle("remove-model", (_event, id: string) => removeModel(id));
+  ipcMain.handle(REMOVE_MODEL, (_event, id: string) => removeModel(id));
   ipcMain.handle(
-    "update-model",
+    UPDATE_MODEL,
     (_event, id: string, fields: Record<string, string>) =>
       updateModel(id, fields),
   );
   ipcMain.handle(
-    "fetch-remote-models",
+    FETCH_REMOTE_MODELS,
     (_event, baseUrl: string, apiKey: string | null) =>
       fetchRemoteModels(baseUrl, apiKey),
   );
+  ipcMain.handle(
+    SYNC_REMOTE_MODELS,
+    (_event, provider: string, baseUrl: string, apiKey?: string) =>
+      syncRemoteModels(provider, baseUrl, apiKey),
+  );
 
   // Claw3D
-  ipcMain.handle("claw3d-status", () => getClaw3dStatus());
+  ipcMain.handle(CLAW3D_STATUS, () => getClaw3dStatus());
 
-  ipcMain.handle("claw3d-setup", async (event) => {
+  ipcMain.handle(CLAW3D_SETUP, async (event) => {
     try {
       await setupClaw3d((progress: Claw3dSetupProgress) => {
-        event.sender.send("claw3d-setup-progress", progress);
+        event.sender.send(CLAW3D_SETUP_PROGRESS, progress);
       });
       return { success: true };
     } catch (err) {
@@ -616,43 +737,43 @@ function setupIPC(): void {
     }
   });
 
-  ipcMain.handle("claw3d-get-port", () => getClaw3dPort());
-  ipcMain.handle("claw3d-set-port", (_event, port: number) => {
+  ipcMain.handle(CLAW3D_GET_PORT, () => getClaw3dPort());
+  ipcMain.handle(CLAW3D_SET_PORT, (_event, port: number) => {
     setClaw3dPort(port);
     return true;
   });
-  ipcMain.handle("claw3d-get-ws-url", () => getClaw3dWsUrl());
-  ipcMain.handle("claw3d-set-ws-url", (_event, url: string) => {
+  ipcMain.handle(CLAW3D_GET_WS_URL, () => getClaw3dWsUrl());
+  ipcMain.handle(CLAW3D_SET_WS_URL, (_event, url: string) => {
     setClaw3dWsUrl(url);
     return true;
   });
 
-  ipcMain.handle("claw3d-start-all", () => startClaw3dAll());
-  ipcMain.handle("claw3d-stop-all", () => {
+  ipcMain.handle(CLAW3D_START_ALL, () => startClaw3dAll());
+  ipcMain.handle(CLAW3D_STOP_ALL, () => {
     stopClaw3d();
     return true;
   });
-  ipcMain.handle("claw3d-get-logs", () => getClaw3dLogs());
+  ipcMain.handle(CLAW3D_GET_LOGS, () => getClaw3dLogs());
 
-  ipcMain.handle("claw3d-start-dev", () => startDevServer());
-  ipcMain.handle("claw3d-stop-dev", () => {
+  ipcMain.handle(CLAW3D_START_DEV, () => startDevServer());
+  ipcMain.handle(CLAW3D_STOP_DEV, () => {
     stopDevServer();
     return true;
   });
-  ipcMain.handle("claw3d-start-adapter", () => startAdapter());
-  ipcMain.handle("claw3d-stop-adapter", () => {
+  ipcMain.handle(CLAW3D_START_ADAPTER, () => startAdapter());
+  ipcMain.handle(CLAW3D_STOP_ADAPTER, () => {
     stopAdapter();
     return true;
   });
 
   // Cron Jobs
   ipcMain.handle(
-    "list-cron-jobs",
+    LIST_CRON_JOBS,
     (_event, includeDisabled?: boolean, profile?: string) =>
       listCronJobs(includeDisabled, profile),
   );
   ipcMain.handle(
-    "create-cron-job",
+    CREATE_CRON_JOB,
     (
       _event,
       schedule: string,
@@ -662,22 +783,21 @@ function setupIPC(): void {
       profile?: string,
     ) => createCronJob(schedule, prompt, name, deliver, profile),
   );
-  ipcMain.handle("remove-cron-job", (_event, jobId: string, profile?: string) =>
+  ipcMain.handle(REMOVE_CRON_JOB, (_event, jobId: string, profile?: string) =>
     removeCronJob(jobId, profile),
   );
-  ipcMain.handle("pause-cron-job", (_event, jobId: string, profile?: string) =>
+  ipcMain.handle(PAUSE_CRON_JOB, (_event, jobId: string, profile?: string) =>
     pauseCronJob(jobId, profile),
   );
-  ipcMain.handle("resume-cron-job", (_event, jobId: string, profile?: string) =>
+  ipcMain.handle(RESUME_CRON_JOB, (_event, jobId: string, profile?: string) =>
     resumeCronJob(jobId, profile),
   );
-  ipcMain.handle(
-    "trigger-cron-job",
-    (_event, jobId: string, profile?: string) => triggerCronJob(jobId, profile),
+  ipcMain.handle(TRIGGER_CRON_JOB, (_event, jobId: string, profile?: string) =>
+    triggerCronJob(jobId, profile),
   );
 
   // Shell
-  ipcMain.handle("open-external", (_event, url: string) => {
+  ipcMain.handle(OPEN_EXTERNAL, (_event, url: string) => {
     shell.openExternal(url);
   });
 }
@@ -711,7 +831,7 @@ function buildMenu(): void {
           label: "New Chat",
           accelerator: "CmdOrCtrl+N",
           click: (): void => {
-            mainWindow?.webContents.send("menu-new-chat");
+            mainWindow?.webContents.send(MENU_NEW_CHAT);
           },
         },
         { type: "separator" },
@@ -719,7 +839,7 @@ function buildMenu(): void {
           label: "Search Sessions",
           accelerator: "CmdOrCtrl+K",
           click: (): void => {
-            mainWindow?.webContents.send("menu-search-sessions");
+            mainWindow?.webContents.send(MENU_SEARCH_SESSIONS);
           },
         },
       ],
@@ -788,13 +908,13 @@ function buildMenu(): void {
 
 function setupUpdater(): void {
   // IPC handlers must always be registered to avoid invoke errors
-  ipcMain.handle("get-app-version", () => app.getVersion());
+  ipcMain.handle(GET_APP_VERSION, () => app.getVersion());
 
   if (!app.isPackaged) {
     // Skip auto-update in dev mode
-    ipcMain.handle("check-for-updates", async () => null);
-    ipcMain.handle("download-update", () => true);
-    ipcMain.handle("install-update", () => {});
+    ipcMain.handle(CHECK_FOR_UPDATES, async () => null);
+    ipcMain.handle(DOWNLOAD_UPDATE, () => true);
+    ipcMain.handle(INSTALL_UPDATE, () => {});
     return;
   }
 
@@ -808,27 +928,27 @@ function setupUpdater(): void {
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on("update-available", (info) => {
-    mainWindow?.webContents.send("update-available", {
+    mainWindow?.webContents.send(UPDATE_AVAILABLE, {
       version: info.version,
       releaseNotes: info.releaseNotes,
     });
   });
 
   autoUpdater.on("download-progress", (progress) => {
-    mainWindow?.webContents.send("update-download-progress", {
+    mainWindow?.webContents.send(UPDATE_DOWNLOAD_PROGRESS, {
       percent: Math.round(progress.percent),
     });
   });
 
   autoUpdater.on("update-downloaded", () => {
-    mainWindow?.webContents.send("update-downloaded");
+    mainWindow?.webContents.send(UPDATE_DOWNLOADED);
   });
 
   autoUpdater.on("error", (err) => {
-    mainWindow?.webContents.send("update-error", err.message);
+    mainWindow?.webContents.send(UPDATE_ERROR, err.message);
   });
 
-  ipcMain.handle("check-for-updates", async () => {
+  ipcMain.handle(CHECK_FOR_UPDATES, async () => {
     try {
       const result = await autoUpdater.checkForUpdates();
       return result?.updateInfo?.version || null;
@@ -837,12 +957,12 @@ function setupUpdater(): void {
     }
   });
 
-  ipcMain.handle("download-update", () => {
+  ipcMain.handle(DOWNLOAD_UPDATE, () => {
     autoUpdater.downloadUpdate();
     return true;
   });
 
-  ipcMain.handle("install-update", () => {
+  ipcMain.handle(INSTALL_UPDATE, () => {
     autoUpdater.quitAndInstall(false, true);
   });
 
@@ -852,6 +972,16 @@ function setupUpdater(): void {
 }
 
 app.whenReady().then(() => {
+  // Platform probe — observation point for the Windows-native dev-loop
+  // cutover (2026-04-12). Logged once per process start.
+  console.log("[pan-desktop] platform probe:", {
+    nodePlatform: process.platform,
+    adapterPlatform: adapter.platform,
+    hermesHome: runtime.hermesHome,
+    pythonExe: runtime.pythonExe,
+    hermesCli: runtime.hermesCli,
+  });
+
   // app.setName + setAppUserModelId moved to module top level (before
   // crashReporter.start) to ensure userData path is correct. Keeping
   // only the dev-time crash-dump log here.
@@ -864,6 +994,14 @@ app.whenReady().then(() => {
 
   buildMenu();
   setupIPC();
+  migrateDesktopData(getDesktop(), adapter).catch((err) =>
+    console.warn("[dataMigration] Unexpected error:", err),
+  );
+  try {
+    startGateway();
+  } catch (err) {
+    console.warn("[gateway] Auto-start failed:", err);
+  }
   createWindow();
   setupUpdater();
 

@@ -1,5 +1,102 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { electronAPI } from "@electron-toolkit/preload";
+import {
+  GET_INSTALL_INSTRUCTIONS,
+  CHECK_INSTALL,
+  START_INSTALL,
+  INSTALL_PROGRESS,
+  GET_HERMES_VERSION,
+  REFRESH_HERMES_VERSION,
+  RUN_HERMES_DOCTOR,
+  RUN_HERMES_UPDATE,
+  CHECK_OPENCLAW,
+  RUN_CLAW_MIGRATE,
+  GET_ENV,
+  SET_ENV,
+  GET_CONFIG,
+  SET_CONFIG,
+  GET_HERMES_HOME,
+  GET_MODEL_CONFIG,
+  SET_MODEL_CONFIG,
+  SEND_MESSAGE,
+  ABORT_CHAT,
+  CHAT_CHUNK,
+  CHAT_DONE,
+  CHAT_ERROR,
+  CHAT_TOOL_PROGRESS,
+  CHAT_USAGE,
+  START_GATEWAY,
+  STOP_GATEWAY,
+  GATEWAY_STATUS,
+  GET_PLATFORM_ENABLED,
+  SET_PLATFORM_ENABLED,
+  LIST_SESSIONS,
+  GET_SESSION_MESSAGES,
+  SEARCH_SESSIONS,
+  LIST_PROFILES,
+  CREATE_PROFILE,
+  DELETE_PROFILE,
+  SET_ACTIVE_PROFILE,
+  READ_MEMORY,
+  ADD_MEMORY_ENTRY,
+  UPDATE_MEMORY_ENTRY,
+  REMOVE_MEMORY_ENTRY,
+  WRITE_USER_PROFILE,
+  READ_SOUL,
+  WRITE_SOUL,
+  RESET_SOUL,
+  GET_TOOLSETS,
+  SET_TOOLSET_ENABLED,
+  LIST_INSTALLED_SKILLS,
+  LIST_BUNDLED_SKILLS,
+  GET_SKILL_CONTENT,
+  INSTALL_SKILL,
+  UNINSTALL_SKILL,
+  LIST_CACHED_SESSIONS,
+  SYNC_SESSION_CACHE,
+  UPDATE_SESSION_TITLE,
+  GET_CREDENTIAL_POOL,
+  SET_CREDENTIAL_POOL,
+  LIST_MODELS,
+  ADD_MODEL,
+  REMOVE_MODEL,
+  UPDATE_MODEL,
+  FETCH_REMOTE_MODELS,
+  SYNC_REMOTE_MODELS,
+  CLAW3D_STATUS,
+  CLAW3D_SETUP,
+  CLAW3D_SETUP_PROGRESS,
+  CLAW3D_GET_PORT,
+  CLAW3D_SET_PORT,
+  CLAW3D_GET_WS_URL,
+  CLAW3D_SET_WS_URL,
+  CLAW3D_START_ALL,
+  CLAW3D_STOP_ALL,
+  CLAW3D_GET_LOGS,
+  CLAW3D_START_DEV,
+  CLAW3D_STOP_DEV,
+  CLAW3D_START_ADAPTER,
+  CLAW3D_STOP_ADAPTER,
+  LIST_CRON_JOBS,
+  CREATE_CRON_JOB,
+  REMOVE_CRON_JOB,
+  PAUSE_CRON_JOB,
+  RESUME_CRON_JOB,
+  TRIGGER_CRON_JOB,
+  OPEN_EXTERNAL,
+  GET_APP_VERSION,
+  CHECK_FOR_UPDATES,
+  DOWNLOAD_UPDATE,
+  INSTALL_UPDATE,
+  UPDATE_AVAILABLE,
+  UPDATE_DOWNLOAD_PROGRESS,
+  UPDATE_DOWNLOADED,
+  UPDATE_ERROR,
+  MENU_NEW_CHAT,
+  MENU_SEARCH_SESSIONS,
+  CHAT_APPROVAL_REQUEST,
+  APPROVAL_RESPOND,
+} from "../shared/channels";
 
 const panAPI = {
   // Installation
@@ -8,16 +105,16 @@ const panAPI = {
     heading: string;
     body: string;
     manualCommand?: string;
-  }> => ipcRenderer.invoke("get-install-instructions"),
+  }> => ipcRenderer.invoke(GET_INSTALL_INSTRUCTIONS),
 
   checkInstall: (): Promise<{
     installed: boolean;
     configured: boolean;
     hasApiKey: boolean;
-  }> => ipcRenderer.invoke("check-install"),
+  }> => ipcRenderer.invoke(CHECK_INSTALL),
 
   startInstall: (): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("start-install"),
+    ipcRenderer.invoke(START_INSTALL),
 
   onInstallProgress: (
     callback: (progress: {
@@ -41,46 +138,45 @@ const panAPI = {
           log: string;
         },
       );
-    ipcRenderer.on("install-progress", handler);
-    return () => ipcRenderer.removeListener("install-progress", handler);
+    ipcRenderer.on(INSTALL_PROGRESS, handler);
+    return () => ipcRenderer.removeListener(INSTALL_PROGRESS, handler);
   },
 
   // Hermes engine info
   getHermesVersion: (): Promise<string | null> =>
-    ipcRenderer.invoke("get-hermes-version"),
+    ipcRenderer.invoke(GET_HERMES_VERSION),
   refreshHermesVersion: (): Promise<string | null> =>
-    ipcRenderer.invoke("refresh-hermes-version"),
-  runHermesDoctor: (): Promise<string> =>
-    ipcRenderer.invoke("run-hermes-doctor"),
+    ipcRenderer.invoke(REFRESH_HERMES_VERSION),
+  runHermesDoctor: (): Promise<string> => ipcRenderer.invoke(RUN_HERMES_DOCTOR),
   runHermesUpdate: (): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("run-hermes-update"),
+    ipcRenderer.invoke(RUN_HERMES_UPDATE),
 
   // OpenClaw migration
   checkOpenClaw: (): Promise<{ found: boolean; path: string | null }> =>
-    ipcRenderer.invoke("check-openclaw"),
+    ipcRenderer.invoke(CHECK_OPENCLAW),
   runClawMigrate: (): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("run-claw-migrate"),
+    ipcRenderer.invoke(RUN_CLAW_MIGRATE),
 
   // Configuration (profile-aware)
   getEnv: (profile?: string): Promise<Record<string, string>> =>
-    ipcRenderer.invoke("get-env", profile),
+    ipcRenderer.invoke(GET_ENV, profile),
 
   setEnv: (key: string, value: string, profile?: string): Promise<boolean> =>
-    ipcRenderer.invoke("set-env", key, value, profile),
+    ipcRenderer.invoke(SET_ENV, key, value, profile),
 
   getConfig: (key: string, profile?: string): Promise<string | null> =>
-    ipcRenderer.invoke("get-config", key, profile),
+    ipcRenderer.invoke(GET_CONFIG, key, profile),
 
   setConfig: (key: string, value: string, profile?: string): Promise<boolean> =>
-    ipcRenderer.invoke("set-config", key, value, profile),
+    ipcRenderer.invoke(SET_CONFIG, key, value, profile),
 
   getHermesHome: (profile?: string): Promise<string> =>
-    ipcRenderer.invoke("get-hermes-home", profile),
+    ipcRenderer.invoke(GET_HERMES_HOME, profile),
 
   getModelConfig: (
     profile?: string,
   ): Promise<{ provider: string; model: string; baseUrl: string }> =>
-    ipcRenderer.invoke("get-model-config", profile),
+    ipcRenderer.invoke(GET_MODEL_CONFIG, profile),
 
   setModelConfig: (
     provider: string,
@@ -88,7 +184,7 @@ const panAPI = {
     baseUrl: string,
     profile?: string,
   ): Promise<boolean> =>
-    ipcRenderer.invoke("set-model-config", provider, model, baseUrl, profile),
+    ipcRenderer.invoke(SET_MODEL_CONFIG, provider, model, baseUrl, profile),
 
   // Chat
   sendMessage: (
@@ -98,20 +194,20 @@ const panAPI = {
     history?: Array<{ role: string; content: string }>,
   ): Promise<{ response: string; sessionId?: string }> =>
     ipcRenderer.invoke(
-      "send-message",
+      SEND_MESSAGE,
       message,
       profile,
       resumeSessionId,
       history,
     ),
 
-  abortChat: (): Promise<void> => ipcRenderer.invoke("abort-chat"),
+  abortChat: (): Promise<void> => ipcRenderer.invoke(ABORT_CHAT),
 
   onChatChunk: (callback: (chunk: string) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, chunk: string): void =>
       callback(chunk);
-    ipcRenderer.on("chat-chunk", handler);
-    return () => ipcRenderer.removeListener("chat-chunk", handler);
+    ipcRenderer.on(CHAT_CHUNK, handler);
+    return () => ipcRenderer.removeListener(CHAT_CHUNK, handler);
   },
 
   onChatDone: (callback: (sessionId?: string) => void): (() => void) => {
@@ -119,15 +215,15 @@ const panAPI = {
       _event: Electron.IpcRendererEvent,
       sessionId?: string,
     ): void => callback(sessionId);
-    ipcRenderer.on("chat-done", handler);
-    return () => ipcRenderer.removeListener("chat-done", handler);
+    ipcRenderer.on(CHAT_DONE, handler);
+    return () => ipcRenderer.removeListener(CHAT_DONE, handler);
   },
 
   onChatToolProgress: (callback: (tool: string) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, tool: string): void =>
       callback(tool);
-    ipcRenderer.on("chat-tool-progress", handler);
-    return () => ipcRenderer.removeListener("chat-tool-progress", handler);
+    ipcRenderer.on(CHAT_TOOL_PROGRESS, handler);
+    return () => ipcRenderer.removeListener(CHAT_TOOL_PROGRESS, handler);
   },
 
   onChatUsage: (
@@ -145,31 +241,67 @@ const panAPI = {
           totalTokens: number;
         },
       );
-    ipcRenderer.on("chat-usage", handler);
-    return () => ipcRenderer.removeListener("chat-usage", handler);
+    ipcRenderer.on(CHAT_USAGE, handler);
+    return () => ipcRenderer.removeListener(CHAT_USAGE, handler);
   },
 
   onChatError: (callback: (error: string) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, error: string): void =>
       callback(error);
-    ipcRenderer.on("chat-error", handler);
-    return () => ipcRenderer.removeListener("chat-error", handler);
+    ipcRenderer.on(CHAT_ERROR, handler);
+    return () => ipcRenderer.removeListener(CHAT_ERROR, handler);
   },
 
+  // Approval (dangerous command confirmation)
+  onChatApprovalRequest: (
+    callback: (request: {
+      id: string;
+      level: 1 | 2;
+      command: string;
+      patternKey: string;
+      description: string;
+      reason: string;
+    }) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      request: unknown,
+    ): void =>
+      callback(
+        request as {
+          id: string;
+          level: 1 | 2;
+          command: string;
+          patternKey: string;
+          description: string;
+          reason: string;
+        },
+      );
+    ipcRenderer.on(CHAT_APPROVAL_REQUEST, handler);
+    return () => ipcRenderer.removeListener(CHAT_APPROVAL_REQUEST, handler);
+  },
+
+  approvalRespond: (
+    approvalId: string,
+    response: "approved" | "denied" | "preview" | "level2_approved",
+    phrase?: string,
+  ): Promise<boolean> =>
+    ipcRenderer.invoke(APPROVAL_RESPOND, approvalId, response, phrase),
+
   // Gateway
-  startGateway: (): Promise<boolean> => ipcRenderer.invoke("start-gateway"),
-  stopGateway: (): Promise<boolean> => ipcRenderer.invoke("stop-gateway"),
-  gatewayStatus: (): Promise<boolean> => ipcRenderer.invoke("gateway-status"),
+  startGateway: (): Promise<boolean> => ipcRenderer.invoke(START_GATEWAY),
+  stopGateway: (): Promise<boolean> => ipcRenderer.invoke(STOP_GATEWAY),
+  gatewayStatus: (): Promise<boolean> => ipcRenderer.invoke(GATEWAY_STATUS),
 
   // Platform toggles
   getPlatformEnabled: (profile?: string): Promise<Record<string, boolean>> =>
-    ipcRenderer.invoke("get-platform-enabled", profile),
+    ipcRenderer.invoke(GET_PLATFORM_ENABLED, profile),
   setPlatformEnabled: (
     platform: string,
     enabled: boolean,
     profile?: string,
   ): Promise<boolean> =>
-    ipcRenderer.invoke("set-platform-enabled", platform, enabled, profile),
+    ipcRenderer.invoke(SET_PLATFORM_ENABLED, platform, enabled, profile),
 
   // Sessions
   listSessions: (
@@ -186,7 +318,7 @@ const panAPI = {
       title: string | null;
       preview: string;
     }>
-  > => ipcRenderer.invoke("list-sessions", limit, offset),
+  > => ipcRenderer.invoke(LIST_SESSIONS, limit, offset),
 
   getSessionMessages: (
     sessionId: string,
@@ -197,7 +329,7 @@ const panAPI = {
       content: string;
       timestamp: number;
     }>
-  > => ipcRenderer.invoke("get-session-messages", sessionId),
+  > => ipcRenderer.invoke(GET_SESSION_MESSAGES, sessionId),
 
   // Profiles
   listProfiles: (): Promise<
@@ -213,21 +345,21 @@ const panAPI = {
       skillCount: number;
       gatewayRunning: boolean;
     }>
-  > => ipcRenderer.invoke("list-profiles"),
+  > => ipcRenderer.invoke(LIST_PROFILES),
 
   createProfile: (
     name: string,
     clone: boolean,
   ): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("create-profile", name, clone),
+    ipcRenderer.invoke(CREATE_PROFILE, name, clone),
 
   deleteProfile: (
     name: string,
   ): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("delete-profile", name),
+    ipcRenderer.invoke(DELETE_PROFILE, name),
 
   setActiveProfile: (name: string): Promise<boolean> =>
-    ipcRenderer.invoke("set-active-profile", name),
+    ipcRenderer.invoke(SET_ACTIVE_PROFILE, name),
 
   // Memory
   readMemory: (
@@ -236,54 +368,54 @@ const panAPI = {
     memory: { content: string; exists: boolean; lastModified: number | null };
     user: { content: string; exists: boolean; lastModified: number | null };
     stats: { totalSessions: number; totalMessages: number };
-  }> => ipcRenderer.invoke("read-memory", profile),
+  }> => ipcRenderer.invoke(READ_MEMORY, profile),
 
   addMemoryEntry: (
     content: string,
     profile?: string,
   ): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("add-memory-entry", content, profile),
+    ipcRenderer.invoke(ADD_MEMORY_ENTRY, content, profile),
   updateMemoryEntry: (
     index: number,
     content: string,
     profile?: string,
   ): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("update-memory-entry", index, content, profile),
+    ipcRenderer.invoke(UPDATE_MEMORY_ENTRY, index, content, profile),
   removeMemoryEntry: (index: number, profile?: string): Promise<boolean> =>
-    ipcRenderer.invoke("remove-memory-entry", index, profile),
+    ipcRenderer.invoke(REMOVE_MEMORY_ENTRY, index, profile),
   writeUserProfile: (
     content: string,
     profile?: string,
   ): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("write-user-profile", content, profile),
+    ipcRenderer.invoke(WRITE_USER_PROFILE, content, profile),
 
   // Soul
   readSoul: (profile?: string): Promise<string> =>
-    ipcRenderer.invoke("read-soul", profile),
+    ipcRenderer.invoke(READ_SOUL, profile),
   writeSoul: (content: string, profile?: string): Promise<boolean> =>
-    ipcRenderer.invoke("write-soul", content, profile),
+    ipcRenderer.invoke(WRITE_SOUL, content, profile),
   resetSoul: (profile?: string): Promise<string> =>
-    ipcRenderer.invoke("reset-soul", profile),
+    ipcRenderer.invoke(RESET_SOUL, profile),
 
   // Tools
   getToolsets: (
     profile?: string,
   ): Promise<
     Array<{ key: string; label: string; description: string; enabled: boolean }>
-  > => ipcRenderer.invoke("get-toolsets", profile),
+  > => ipcRenderer.invoke(GET_TOOLSETS, profile),
   setToolsetEnabled: (
     key: string,
     enabled: boolean,
     profile?: string,
   ): Promise<boolean> =>
-    ipcRenderer.invoke("set-toolset-enabled", key, enabled, profile),
+    ipcRenderer.invoke(SET_TOOLSET_ENABLED, key, enabled, profile),
 
   // Skills
   listInstalledSkills: (
     profile?: string,
   ): Promise<
     Array<{ name: string; category: string; description: string; path: string }>
-  > => ipcRenderer.invoke("list-installed-skills", profile),
+  > => ipcRenderer.invoke(LIST_INSTALLED_SKILLS, profile),
   listBundledSkills: (): Promise<
     Array<{
       name: string;
@@ -292,19 +424,19 @@ const panAPI = {
       source: string;
       installed: boolean;
     }>
-  > => ipcRenderer.invoke("list-bundled-skills"),
+  > => ipcRenderer.invoke(LIST_BUNDLED_SKILLS),
   getSkillContent: (skillPath: string): Promise<string> =>
-    ipcRenderer.invoke("get-skill-content", skillPath),
+    ipcRenderer.invoke(GET_SKILL_CONTENT, skillPath),
   installSkill: (
     identifier: string,
     profile?: string,
   ): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("install-skill", identifier, profile),
+    ipcRenderer.invoke(INSTALL_SKILL, identifier, profile),
   uninstallSkill: (
     name: string,
     profile?: string,
   ): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("uninstall-skill", name, profile),
+    ipcRenderer.invoke(UNINSTALL_SKILL, name, profile),
 
   // Session cache (fast local cache with generated titles)
   listCachedSessions: (
@@ -319,7 +451,7 @@ const panAPI = {
       messageCount: number;
       model: string;
     }>
-  > => ipcRenderer.invoke("list-cached-sessions", limit, offset),
+  > => ipcRenderer.invoke(LIST_CACHED_SESSIONS, limit, offset),
 
   syncSessionCache: (): Promise<
     Array<{
@@ -330,10 +462,10 @@ const panAPI = {
       messageCount: number;
       model: string;
     }>
-  > => ipcRenderer.invoke("sync-session-cache"),
+  > => ipcRenderer.invoke(SYNC_SESSION_CACHE),
 
   updateSessionTitle: (sessionId: string, title: string): Promise<void> =>
-    ipcRenderer.invoke("update-session-title", sessionId, title),
+    ipcRenderer.invoke(UPDATE_SESSION_TITLE, sessionId, title),
 
   // Session search
   searchSessions: (
@@ -349,17 +481,17 @@ const panAPI = {
       model: string;
       snippet: string;
     }>
-  > => ipcRenderer.invoke("search-sessions", query, limit),
+  > => ipcRenderer.invoke(SEARCH_SESSIONS, query, limit),
 
   // Credential Pool
   getCredentialPool: (): Promise<
     Record<string, Array<{ key: string; label: string }>>
-  > => ipcRenderer.invoke("get-credential-pool"),
+  > => ipcRenderer.invoke(GET_CREDENTIAL_POOL),
   setCredentialPool: (
     provider: string,
     entries: Array<{ key: string; label: string }>,
   ): Promise<boolean> =>
-    ipcRenderer.invoke("set-credential-pool", provider, entries),
+    ipcRenderer.invoke(SET_CREDENTIAL_POOL, provider, entries),
 
   // Models
   listModels: (): Promise<
@@ -371,7 +503,7 @@ const panAPI = {
       baseUrl: string;
       createdAt: number;
     }>
-  > => ipcRenderer.invoke("list-models"),
+  > => ipcRenderer.invoke(LIST_MODELS),
 
   addModel: (
     name: string,
@@ -385,19 +517,34 @@ const panAPI = {
     model: string;
     baseUrl: string;
     createdAt: number;
-  }> => ipcRenderer.invoke("add-model", name, provider, model, baseUrl),
+  }> => ipcRenderer.invoke(ADD_MODEL, name, provider, model, baseUrl),
 
   removeModel: (id: string): Promise<boolean> =>
-    ipcRenderer.invoke("remove-model", id),
+    ipcRenderer.invoke(REMOVE_MODEL, id),
 
   updateModel: (id: string, fields: Record<string, string>): Promise<boolean> =>
-    ipcRenderer.invoke("update-model", id, fields),
+    ipcRenderer.invoke(UPDATE_MODEL, id, fields),
 
   fetchRemoteModels: (
     baseUrl: string,
     apiKey: string | null,
   ): Promise<{ ok: boolean; models: string[]; error?: string }> =>
-    ipcRenderer.invoke("fetch-remote-models", baseUrl, apiKey),
+    ipcRenderer.invoke(FETCH_REMOTE_MODELS, baseUrl, apiKey),
+
+  syncRemoteModels: (
+    provider: string,
+    baseUrl: string,
+    apiKey?: string,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      provider: string;
+      model: string;
+      baseUrl: string;
+      createdAt: number;
+    }>
+  > => ipcRenderer.invoke(SYNC_REMOTE_MODELS, provider, baseUrl, apiKey),
 
   // Claw3D
   claw3dStatus: (): Promise<{
@@ -410,10 +557,10 @@ const panAPI = {
     wsUrl: string;
     running: boolean;
     error: string;
-  }> => ipcRenderer.invoke("claw3d-status"),
+  }> => ipcRenderer.invoke(CLAW3D_STATUS),
 
   claw3dSetup: (): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("claw3d-setup"),
+    ipcRenderer.invoke(CLAW3D_SETUP),
 
   onClaw3dSetupProgress: (
     callback: (progress: {
@@ -437,45 +584,43 @@ const panAPI = {
           log: string;
         },
       );
-    ipcRenderer.on("claw3d-setup-progress", handler);
-    return () => ipcRenderer.removeListener("claw3d-setup-progress", handler);
+    ipcRenderer.on(CLAW3D_SETUP_PROGRESS, handler);
+    return () => ipcRenderer.removeListener(CLAW3D_SETUP_PROGRESS, handler);
   },
 
-  claw3dGetPort: (): Promise<number> => ipcRenderer.invoke("claw3d-get-port"),
+  claw3dGetPort: (): Promise<number> => ipcRenderer.invoke(CLAW3D_GET_PORT),
   claw3dSetPort: (port: number): Promise<boolean> =>
-    ipcRenderer.invoke("claw3d-set-port", port),
-  claw3dGetWsUrl: (): Promise<string> =>
-    ipcRenderer.invoke("claw3d-get-ws-url"),
+    ipcRenderer.invoke(CLAW3D_SET_PORT, port),
+  claw3dGetWsUrl: (): Promise<string> => ipcRenderer.invoke(CLAW3D_GET_WS_URL),
   claw3dSetWsUrl: (url: string): Promise<boolean> =>
-    ipcRenderer.invoke("claw3d-set-ws-url", url),
+    ipcRenderer.invoke(CLAW3D_SET_WS_URL, url),
 
   claw3dStartAll: (): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("claw3d-start-all"),
-  claw3dStopAll: (): Promise<boolean> => ipcRenderer.invoke("claw3d-stop-all"),
-  claw3dGetLogs: (): Promise<string> => ipcRenderer.invoke("claw3d-get-logs"),
+    ipcRenderer.invoke(CLAW3D_START_ALL),
+  claw3dStopAll: (): Promise<boolean> => ipcRenderer.invoke(CLAW3D_STOP_ALL),
+  claw3dGetLogs: (): Promise<string> => ipcRenderer.invoke(CLAW3D_GET_LOGS),
 
-  claw3dStartDev: (): Promise<boolean> =>
-    ipcRenderer.invoke("claw3d-start-dev"),
-  claw3dStopDev: (): Promise<boolean> => ipcRenderer.invoke("claw3d-stop-dev"),
+  claw3dStartDev: (): Promise<boolean> => ipcRenderer.invoke(CLAW3D_START_DEV),
+  claw3dStopDev: (): Promise<boolean> => ipcRenderer.invoke(CLAW3D_STOP_DEV),
   claw3dStartAdapter: (): Promise<boolean> =>
-    ipcRenderer.invoke("claw3d-start-adapter"),
+    ipcRenderer.invoke(CLAW3D_START_ADAPTER),
   claw3dStopAdapter: (): Promise<boolean> =>
-    ipcRenderer.invoke("claw3d-stop-adapter"),
+    ipcRenderer.invoke(CLAW3D_STOP_ADAPTER),
 
   // Updates
   checkForUpdates: (): Promise<string | null> =>
-    ipcRenderer.invoke("check-for-updates"),
-  downloadUpdate: (): Promise<boolean> => ipcRenderer.invoke("download-update"),
-  installUpdate: (): Promise<void> => ipcRenderer.invoke("install-update"),
-  getAppVersion: (): Promise<string> => ipcRenderer.invoke("get-app-version"),
+    ipcRenderer.invoke(CHECK_FOR_UPDATES),
+  downloadUpdate: (): Promise<boolean> => ipcRenderer.invoke(DOWNLOAD_UPDATE),
+  installUpdate: (): Promise<void> => ipcRenderer.invoke(INSTALL_UPDATE),
+  getAppVersion: (): Promise<string> => ipcRenderer.invoke(GET_APP_VERSION),
 
   onUpdateAvailable: (
     callback: (info: { version: string; releaseNotes: string }) => void,
   ): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, info: unknown): void =>
       callback(info as { version: string; releaseNotes: string });
-    ipcRenderer.on("update-available", handler);
-    return () => ipcRenderer.removeListener("update-available", handler);
+    ipcRenderer.on(UPDATE_AVAILABLE, handler);
+    return () => ipcRenderer.removeListener(UPDATE_AVAILABLE, handler);
   },
 
   onUpdateDownloadProgress: (
@@ -483,28 +628,34 @@ const panAPI = {
   ): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, info: unknown): void =>
       callback(info as { percent: number });
-    ipcRenderer.on("update-download-progress", handler);
-    return () =>
-      ipcRenderer.removeListener("update-download-progress", handler);
+    ipcRenderer.on(UPDATE_DOWNLOAD_PROGRESS, handler);
+    return () => ipcRenderer.removeListener(UPDATE_DOWNLOAD_PROGRESS, handler);
   },
 
   onUpdateDownloaded: (callback: () => void): (() => void) => {
     const handler = (): void => callback();
-    ipcRenderer.on("update-downloaded", handler);
-    return () => ipcRenderer.removeListener("update-downloaded", handler);
+    ipcRenderer.on(UPDATE_DOWNLOADED, handler);
+    return () => ipcRenderer.removeListener(UPDATE_DOWNLOADED, handler);
+  },
+
+  onUpdateError: (callback: (error: string) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, error: string): void =>
+      callback(error);
+    ipcRenderer.on(UPDATE_ERROR, handler);
+    return () => ipcRenderer.removeListener(UPDATE_ERROR, handler);
   },
 
   // Menu events (from native menu bar)
   onMenuNewChat: (callback: () => void): (() => void) => {
     const handler = (): void => callback();
-    ipcRenderer.on("menu-new-chat", handler);
-    return () => ipcRenderer.removeListener("menu-new-chat", handler);
+    ipcRenderer.on(MENU_NEW_CHAT, handler);
+    return () => ipcRenderer.removeListener(MENU_NEW_CHAT, handler);
   },
 
   onMenuSearchSessions: (callback: () => void): (() => void) => {
     const handler = (): void => callback();
-    ipcRenderer.on("menu-search-sessions", handler);
-    return () => ipcRenderer.removeListener("menu-search-sessions", handler);
+    ipcRenderer.on(MENU_SEARCH_SESSIONS, handler);
+    return () => ipcRenderer.removeListener(MENU_SEARCH_SESSIONS, handler);
   },
 
   // Cron Jobs
@@ -528,7 +679,7 @@ const panAPI = {
       skills: string[];
       script: string | null;
     }>
-  > => ipcRenderer.invoke("list-cron-jobs", includeDisabled, profile),
+  > => ipcRenderer.invoke(LIST_CRON_JOBS, includeDisabled, profile),
 
   createCronJob: (
     schedule: string,
@@ -538,7 +689,7 @@ const panAPI = {
     profile?: string,
   ): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke(
-      "create-cron-job",
+      CREATE_CRON_JOB,
       schedule,
       prompt,
       name,
@@ -550,29 +701,29 @@ const panAPI = {
     jobId: string,
     profile?: string,
   ): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("remove-cron-job", jobId, profile),
+    ipcRenderer.invoke(REMOVE_CRON_JOB, jobId, profile),
 
   pauseCronJob: (
     jobId: string,
     profile?: string,
   ): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("pause-cron-job", jobId, profile),
+    ipcRenderer.invoke(PAUSE_CRON_JOB, jobId, profile),
 
   resumeCronJob: (
     jobId: string,
     profile?: string,
   ): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("resume-cron-job", jobId, profile),
+    ipcRenderer.invoke(RESUME_CRON_JOB, jobId, profile),
 
   triggerCronJob: (
     jobId: string,
     profile?: string,
   ): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("trigger-cron-job", jobId, profile),
+    ipcRenderer.invoke(TRIGGER_CRON_JOB, jobId, profile),
 
   // Shell
   openExternal: (url: string): Promise<void> =>
-    ipcRenderer.invoke("open-external", url),
+    ipcRenderer.invoke(OPEN_EXTERNAL, url),
 };
 
 if (process.contextIsolated) {

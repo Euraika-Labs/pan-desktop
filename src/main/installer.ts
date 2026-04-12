@@ -174,7 +174,7 @@ export async function checkInstallStatus(): Promise<InstallStatus> {
         const trimmed = line.trim();
         if (trimmed.startsWith("#")) continue;
         const match = trimmed.match(
-          /^(OPENROUTER_API_KEY|ANTHROPIC_API_KEY|OPENAI_API_KEY)=(.+)$/,
+          /^(OPENROUTER_API_KEY|ANTHROPIC_API_KEY|OPENAI_API_KEY|REGOLO_API_KEY)=(.+)$/,
         );
         if (
           match &&

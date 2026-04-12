@@ -2,6 +2,11 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import icon from "../../assets/icon.png";
 import { AgentMarkdown } from "../../components/AgentMarkdown";
 import {
+  ApprovalModal,
+  type ApprovalRequest,
+  type ApprovalResponse,
+} from "../../components/ApprovalModal";
+import {
   Trash2 as Trash,
   Send,
   Square as Stop,
@@ -195,6 +200,28 @@ function Chat({
   const [isLoading, setIsLoading] = useState(false);
   const [hermesSessionId, setHermesSessionId] = useState<string | null>(null);
   const [toolProgress, setToolProgress] = useState<string | null>(null);
+  const [approvalRequest, setApprovalRequest] =
+    useState<ApprovalRequest | null>(null);
+
+  const handleApprovalResponse = useCallback(
+    (id: string, response: ApprovalResponse): void => {
+      const request = approvalRequest;
+      setApprovalRequest(null);
+      if (!request || request.id !== id) return;
+      if (response === "approved") {
+        const wireResponse =
+          request.level === 2 ? "level2_approved" : "approved";
+        const phrase =
+          request.level === 2 ? "YES-I-UNDERSTAND-THE-RISK" : undefined;
+        window.panAPI.approvalRespond(id, wireResponse, phrase);
+      } else if (response === "denied") {
+        window.panAPI.approvalRespond(id, "denied");
+      } else if (response === "preview") {
+        window.panAPI.approvalRespond(id, "preview");
+      }
+    },
+    [approvalRequest],
+  );
   const [usage, setUsage] = useState<{
     promptTokens: number;
     completionTokens: number;
@@ -261,13 +288,29 @@ function Chat({
   }, [messages]);
 
   const loadModelConfig = useCallback(async (): Promise<void> => {
-    const [modelConfig, savedModels] = await Promise.all([
+    const [modelConfig, initialModels] = await Promise.all([
       window.panAPI.getModelConfig(profile),
       window.panAPI.listModels(),
     ]);
     setCurrentModel(modelConfig.model);
     setCurrentProvider(modelConfig.provider);
     setCurrentBaseUrl(modelConfig.baseUrl);
+
+    // Auto-discover remote models for providers with a base URL
+    let savedModels = initialModels;
+    if (modelConfig.baseUrl && modelConfig.provider === "regolo") {
+      try {
+        const env = await window.panAPI.getEnv(profile);
+        const apiKey = env.REGOLO_API_KEY || env.OPENAI_API_KEY || "";
+        savedModels = await window.panAPI.syncRemoteModels(
+          modelConfig.provider,
+          modelConfig.baseUrl,
+          apiKey,
+        );
+      } catch {
+        // Discovery failed — use existing saved models
+      }
+    }
 
     // Group saved models by provider
     const groupMap = new Map<string, ModelGroup>();
@@ -405,12 +448,17 @@ function Chat({
       }));
     });
 
+    const cleanupApproval = window.panAPI.onChatApprovalRequest((request) => {
+      setApprovalRequest(request);
+    });
+
     return () => {
       cleanupChunk();
       cleanupDone();
       cleanupError();
       cleanupToolProgress();
       cleanupUsage();
+      cleanupApproval();
     };
   }, [setMessages]);
 
@@ -1068,6 +1116,10 @@ function Chat({
           )}
         </div>
       </div>
+      <ApprovalModal
+        request={approvalRequest}
+        onResponse={handleApprovalResponse}
+      />
     </div>
   );
 }

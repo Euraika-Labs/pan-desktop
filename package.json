@@ -1,6 +1,6 @@
 {
   "name": "pan-desktop",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Pan Desktop — native Windows desktop for Hermes Agent. Hard fork of fathah/hermes-desktop.",
   "productName": "Pan Desktop",
   "main": "./out/main/index.js",
@@ -28,7 +28,8 @@
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "electron-vite build && electron-builder --mac",
-    "build:linux": "electron-vite build && electron-builder --linux"
+    "build:linux": "electron-vite build && electron-builder --linux",
+    "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
@@ -52,6 +53,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "conventional-changelog-cli": "^5.0.0",
     "electron": "^39.2.6",
     "electron-builder": "^26.0.12",
     "electron-vite": "^5.0.0",
