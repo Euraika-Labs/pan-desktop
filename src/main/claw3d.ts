@@ -19,6 +19,11 @@ const PORT_FILE = join(runtime.hermesHome, "claw3d-port");
 const WS_URL_FILE = join(runtime.hermesHome, "claw3d-ws-url");
 const DEFAULT_PORT = 3000;
 const DEFAULT_WS_URL = "ws://localhost:18789";
+const PORT_CHECK_TIMEOUT_MS = 300;
+const PROGRESS_DETAIL_MAX_LENGTH = 120;
+const ERROR_TRUNCATE_LENGTH = 300;
+const LOG_BUFFER_MAX_LENGTH = 2000;
+const PROCESS_KILL_GRACE_MS = 3000;
 
 /**
  * Where Claw3D stores its own onboarding settings. In Wave 1 we moved this
@@ -134,7 +139,7 @@ function writeClaw3dSettings(wsUrl?: string): void {
 function checkPort(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = createConnection({ port, host: "127.0.0.1" });
-    socket.setTimeout(300); // 300ms is plenty for localhost
+    socket.setTimeout(PORT_CHECK_TIMEOUT_MS); // plenty for localhost
     socket.on("connect", () => {
       socket.destroy();
       resolve(true); // port is in use
@@ -256,7 +261,7 @@ export async function setupClaw3d(
       step,
       totalSteps,
       title,
-      detail: text.trim().slice(0, 120),
+      detail: text.trim().slice(0, PROGRESS_DETAIL_MAX_LENGTH),
       log,
     });
   }
@@ -379,19 +384,19 @@ export async function startDevServer(): Promise<boolean> {
     detached: true,
     onStdout: (text) => {
       devServerLogs += stripAnsi(text);
-      if (devServerLogs.length > 2000)
-        devServerLogs = devServerLogs.slice(-2000);
+      if (devServerLogs.length > LOG_BUFFER_MAX_LENGTH)
+        devServerLogs = devServerLogs.slice(-LOG_BUFFER_MAX_LENGTH);
     },
     onStderr: (raw) => {
       const text = stripAnsi(raw);
       devServerLogs += text;
-      if (devServerLogs.length > 2000)
-        devServerLogs = devServerLogs.slice(-2000);
+      if (devServerLogs.length > LOG_BUFFER_MAX_LENGTH)
+        devServerLogs = devServerLogs.slice(-LOG_BUFFER_MAX_LENGTH);
       if (
         /error|EADDRINUSE|ENOENT|failed|fatal/i.test(text) &&
         !/warning/i.test(text)
       ) {
-        devServerError = text.trim().slice(0, 300);
+        devServerError = text.trim().slice(0, ERROR_TRUNCATE_LENGTH);
       }
     },
   });
@@ -414,7 +419,7 @@ export async function startDevServer(): Promise<boolean> {
 export async function stopDevServer(): Promise<void> {
   if (devServerProcess) {
     await processRunner
-      .killTree(devServerProcess, { graceMs: 3000 })
+      .killTree(devServerProcess, { graceMs: PROCESS_KILL_GRACE_MS })
       .catch(() => {
         /* already gone */
       });
@@ -423,9 +428,11 @@ export async function stopDevServer(): Promise<void> {
 
   const pid = readPid(DEV_PID_FILE);
   if (pid) {
-    await processRunner.killTree(pid, { graceMs: 3000 }).catch(() => {
-      /* already gone */
-    });
+    await processRunner
+      .killTree(pid, { graceMs: PROCESS_KILL_GRACE_MS })
+      .catch(() => {
+        /* already gone */
+      });
   }
   cleanupPid(DEV_PID_FILE);
 }
@@ -444,17 +451,19 @@ export async function startAdapter(): Promise<boolean> {
     detached: true,
     onStdout: (text) => {
       adapterLogs += stripAnsi(text);
-      if (adapterLogs.length > 2000) adapterLogs = adapterLogs.slice(-2000);
+      if (adapterLogs.length > LOG_BUFFER_MAX_LENGTH)
+        adapterLogs = adapterLogs.slice(-LOG_BUFFER_MAX_LENGTH);
     },
     onStderr: (raw) => {
       const text = stripAnsi(raw);
       adapterLogs += text;
-      if (adapterLogs.length > 2000) adapterLogs = adapterLogs.slice(-2000);
+      if (adapterLogs.length > LOG_BUFFER_MAX_LENGTH)
+        adapterLogs = adapterLogs.slice(-LOG_BUFFER_MAX_LENGTH);
       if (
         /error|EADDRINUSE|ENOENT|failed|fatal/i.test(text) &&
         !/warning/i.test(text)
       ) {
-        adapterError = text.trim().slice(0, 300);
+        adapterError = text.trim().slice(0, ERROR_TRUNCATE_LENGTH);
       }
     },
   });
@@ -488,7 +497,7 @@ export async function startAdapter(): Promise<boolean> {
 export async function stopAdapter(): Promise<void> {
   if (adapterProcess) {
     await processRunner
-      .killTree(adapterProcess, { graceMs: 3000 })
+      .killTree(adapterProcess, { graceMs: PROCESS_KILL_GRACE_MS })
       .catch(() => {
         /* already gone */
       });
@@ -497,9 +506,11 @@ export async function stopAdapter(): Promise<void> {
 
   const pid = readPid(ADAPTER_PID_FILE);
   if (pid) {
-    await processRunner.killTree(pid, { graceMs: 3000 }).catch(() => {
-      /* already gone */
-    });
+    await processRunner
+      .killTree(pid, { graceMs: PROCESS_KILL_GRACE_MS })
+      .catch(() => {
+        /* already gone */
+      });
   }
   cleanupPid(ADAPTER_PID_FILE);
 }

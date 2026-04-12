@@ -131,10 +131,10 @@ function Agents({
             placeholder="Agent name (e.g. coder)"
             value={newName}
             onChange={(e) => {
-              const v = e.target.value
+              const sanitizedName = e.target.value
                 .toLowerCase()
                 .replace(/[^a-z0-9_-]/g, "");
-              setNewName(v);
+              setNewName(sanitizedName);
               setError("");
             }}
             onKeyDown={(e) => e.key === "Enter" && handleCreate()}

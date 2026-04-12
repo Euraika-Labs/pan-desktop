@@ -4,6 +4,9 @@ import { join } from "path";
 import { runtime, processRunner } from "./runtime/instance";
 import { buildHermesEnv } from "./installer";
 
+const CLI_COMMAND_TIMEOUT_MS = 15000;
+const PROFILE_SWITCH_TIMEOUT_MS = 10000;
+
 export interface ProfileInfo {
   name: string;
   path: string;
@@ -210,7 +213,7 @@ export async function createProfile(
   const args = clone
     ? ["profile", "create", name, "--clone"]
     : ["profile", "create", name];
-  return runProfileCommand(args, 15000);
+  return runProfileCommand(args, CLI_COMMAND_TIMEOUT_MS);
 }
 
 export async function deleteProfile(
@@ -219,14 +222,20 @@ export async function deleteProfile(
   if (name === "default") {
     return { success: false, error: "Cannot delete the default profile" };
   }
-  return runProfileCommand(["profile", "delete", name, "--yes"], 15000);
+  return runProfileCommand(
+    ["profile", "delete", name, "--yes"],
+    CLI_COMMAND_TIMEOUT_MS,
+  );
 }
 
 export async function setActiveProfile(name: string): Promise<void> {
   // Fire-and-forget semantics preserved — we don't surface errors to the
   // caller here because the IPC handler treats this as a best-effort toggle.
   try {
-    await runProfileCommand(["profile", "use", name], 10000);
+    await runProfileCommand(
+      ["profile", "use", name],
+      PROFILE_SWITCH_TIMEOUT_MS,
+    );
   } catch {
     // ignore
   }

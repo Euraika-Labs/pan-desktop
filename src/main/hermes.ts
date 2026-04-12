@@ -9,6 +9,12 @@ import { stripAnsi } from "./utils";
 
 const HERMES_GATEWAY_URL = "http://127.0.0.1:8642";
 
+const HEALTH_CHECK_TIMEOUT_MS = 1500;
+const HEALTH_POLL_INTERVAL_MS = 15000;
+const GATEWAY_STARTUP_DELAY_MS = 3000;
+const PROCESS_KILL_GRACE_MS = 3000;
+const ERROR_BODY_TRUNCATE_LENGTH = 200;
+
 const LOCAL_PROVIDERS = new Set([
   "custom",
   "lmstudio",
@@ -37,7 +43,7 @@ function isApiServerReady(): Promise<boolean> {
   return new Promise((resolve) => {
     const req = http.get(
       `${HERMES_GATEWAY_URL}/health`,
-      { timeout: 1500 },
+      { timeout: HEALTH_CHECK_TIMEOUT_MS },
       (res) => {
         resolve(res.statusCode === 200);
         res.resume();
@@ -256,7 +262,7 @@ function sendMessageViaApi(
             finish(err.error?.message || `API error ${res.statusCode}`);
           } catch {
             finish(
-              `API server returned ${res.statusCode}: ${errBody.slice(0, 200)}`,
+              `API server returned ${res.statusCode}: ${errBody.slice(0, ERROR_BODY_TRUNCATE_LENGTH)}`,
             );
           }
         });
@@ -483,9 +489,11 @@ function sendMessageViaCli(
     abort: () => {
       // processRunner.killTree walks the whole tree with a grace period
       // before escalating to SIGKILL. Fire-and-forget — we don't await.
-      processRunner.killTree(proc, { graceMs: 3000 }).catch(() => {
-        /* already gone or uninterruptible — nothing useful to log */
-      });
+      processRunner
+        .killTree(proc, { graceMs: PROCESS_KILL_GRACE_MS })
+        .catch(() => {
+          /* already gone or uninterruptible — nothing useful to log */
+        });
     },
   };
 }
@@ -543,7 +551,7 @@ function startHealthPolling(): void {
       clearInterval(_healthCheckInterval);
       _healthCheckInterval = null;
     }
-  }, 15000);
+  }, HEALTH_POLL_INTERVAL_MS);
 }
 
 export function stopHealthPolling(): void {
@@ -610,7 +618,7 @@ export function startGateway(profile?: string): boolean {
   // Wait a bit then check if API server came up
   setTimeout(async () => {
     apiServerAvailable = await isApiServerReady();
-  }, 3000);
+  }, GATEWAY_STARTUP_DELAY_MS);
 
   return true;
 }
@@ -636,18 +644,22 @@ export function stopGateway(force = false): void {
   if (gatewayProcess && !gatewayProcess.killed) {
     // processRunner.killTree terminates the gateway + any spawned children
     // (e.g. subagents) cross-platform. Fire-and-forget; ignore errors.
-    processRunner.killTree(gatewayProcess, { graceMs: 3000 }).catch(() => {
-      /* already gone */
-    });
+    processRunner
+      .killTree(gatewayProcess, { graceMs: PROCESS_KILL_GRACE_MS })
+      .catch(() => {
+        /* already gone */
+      });
     gatewayProcess = null;
   }
   // Also kill any detached gateway recorded in the pid file. This covers
   // the "app restarted and found a leftover daemon" case.
   const pid = readPidFile();
   if (pid) {
-    processRunner.killTree(pid, { graceMs: 3000 }).catch(() => {
-      /* already gone */
-    });
+    processRunner
+      .killTree(pid, { graceMs: PROCESS_KILL_GRACE_MS })
+      .catch(() => {
+        /* already gone */
+      });
   }
   gatewayStartedByApp = false;
   apiServerAvailable = false;

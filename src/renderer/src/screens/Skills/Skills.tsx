@@ -94,11 +94,11 @@ function Skills({ profile }: SkillsProps): React.JSX.Element {
   // Filter logic
   const filteredInstalled = installedSkills.filter((s) => {
     if (search) {
-      const q = search.toLowerCase();
+      const query = search.toLowerCase();
       return (
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q) ||
-        s.category.toLowerCase().includes(q)
+        s.name.toLowerCase().includes(query) ||
+        s.description.toLowerCase().includes(query) ||
+        s.category.toLowerCase().includes(query)
       );
     }
     return true;
@@ -107,11 +107,11 @@ function Skills({ profile }: SkillsProps): React.JSX.Element {
   const filteredBundled = bundledSkills.filter((s) => {
     let matches = true;
     if (search) {
-      const q = search.toLowerCase();
+      const query = search.toLowerCase();
       matches =
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q) ||
-        s.category.toLowerCase().includes(q);
+        s.name.toLowerCase().includes(query) ||
+        s.description.toLowerCase().includes(query) ||
+        s.category.toLowerCase().includes(query);
     }
     if (categoryFilter) {
       matches = matches && s.category === categoryFilter;

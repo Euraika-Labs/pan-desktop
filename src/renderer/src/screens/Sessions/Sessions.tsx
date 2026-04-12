@@ -27,42 +27,42 @@ interface SessionsProps {
 }
 
 function formatTime(ts: number): string {
-  const d = new Date(ts * 1000);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const date = new Date(ts * 1000);
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function formatFullDate(ts: number): string {
-  const d = new Date(ts * 1000);
+  const date = new Date(ts * 1000);
   return (
-    d.toLocaleDateString([], { month: "short", day: "numeric" }) +
+    date.toLocaleDateString([], { month: "short", day: "numeric" }) +
     ", " +
-    d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
   );
 }
 
 type DateGroup = "Today" | "Yesterday" | "This Week" | "Earlier";
 
 function getDateGroup(ts: number): DateGroup {
-  const d = new Date(ts * 1000);
+  const date = new Date(ts * 1000);
   const now = new Date();
 
   const isToday =
-    d.getDate() === now.getDate() &&
-    d.getMonth() === now.getMonth() &&
-    d.getFullYear() === now.getFullYear();
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
   if (isToday) return "Today";
 
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
   const isYesterday =
-    d.getDate() === yesterday.getDate() &&
-    d.getMonth() === yesterday.getMonth() &&
-    d.getFullYear() === yesterday.getFullYear();
+    date.getDate() === yesterday.getDate() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getFullYear() === yesterday.getFullYear();
   if (isYesterday) return "Yesterday";
 
   const weekAgo = new Date(now);
   weekAgo.setDate(weekAgo.getDate() - 7);
-  if (d >= weekAgo) return "This Week";
+  if (date >= weekAgo) return "This Week";
 
   return "Earlier";
 }

@@ -103,11 +103,11 @@ function Models(): React.JSX.Element {
 
   const filtered = models.filter((m) => {
     if (!search) return true;
-    const q = search.toLowerCase();
+    const query = search.toLowerCase();
     return (
-      m.name.toLowerCase().includes(q) ||
-      m.model.toLowerCase().includes(q) ||
-      m.provider.toLowerCase().includes(q)
+      m.name.toLowerCase().includes(query) ||
+      m.model.toLowerCase().includes(query) ||
+      m.provider.toLowerCase().includes(query)
     );
   });
 

@@ -229,9 +229,9 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
   function formatTime(iso: string | null): string {
     if (!iso) return "--";
     try {
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) return iso;
-      return d.toLocaleString(undefined, {
+      const date = new Date(iso);
+      if (isNaN(date.getTime())) return iso;
+      return date.toLocaleString(undefined, {
         month: "short",
         day: "numeric",
         hour: "2-digit",

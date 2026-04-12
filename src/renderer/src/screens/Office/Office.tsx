@@ -116,10 +116,10 @@ function Office({ visible }: { visible?: boolean }): React.JSX.Element {
     };
     const onFail = (evt: unknown): void => {
       setWebviewReady(false);
-      const e = evt as { errorDescription?: string; errorCode?: number };
-      if (e?.errorCode === -3) return; // Aborted — ignore (happens on reload)
+      const error = evt as { errorDescription?: string; errorCode?: number };
+      if (error?.errorCode === -3) return; // Aborted — ignore (happens on reload)
       setWebviewError(
-        e?.errorDescription ||
+        error?.errorDescription ||
           "Failed to load Claw3D. The dev server may still be starting up.",
       );
     };
@@ -195,8 +195,8 @@ function Office({ visible }: { visible?: boolean }): React.JSX.Element {
   }
 
   async function loadLogs(): Promise<void> {
-    const l = await window.panAPI.claw3dGetLogs();
-    setLogs(l);
+    const logData = await window.panAPI.claw3dGetLogs();
+    setLogs(logData);
     setShowLogs(true);
   }
 

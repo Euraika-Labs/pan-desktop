@@ -292,12 +292,14 @@ function Settings({
   // Parse "Hermes Agent v0.7.0 (2026.4.3) Project: ... Python: 3.11.15 OpenAI SDK: 2.30.0 Update available: ..."
   const parsedVersion = (() => {
     if (!hermesVersion) return null;
-    const v = hermesVersion;
-    const version = v.match(/v([\d.]+)/)?.[1] || "";
-    const date = v.match(/\(([\d.]+)\)/)?.[1] || "";
-    const python = v.match(/Python:\s*([\d.]+)/)?.[1] || "";
-    const sdk = v.match(/OpenAI SDK:\s*([\d.]+)/)?.[1] || "";
-    const updateMatch = v.match(/Update available:\s*(.+?)(?:\s*—|$)/);
+    const versionString = hermesVersion;
+    const version = versionString.match(/v([\d.]+)/)?.[1] || "";
+    const date = versionString.match(/\(([\d.]+)\)/)?.[1] || "";
+    const python = versionString.match(/Python:\s*([\d.]+)/)?.[1] || "";
+    const sdk = versionString.match(/OpenAI SDK:\s*([\d.]+)/)?.[1] || "";
+    const updateMatch = versionString.match(
+      /Update available:\s*(.+?)(?:\s*—|$)/,
+    );
     const updateInfo = updateMatch?.[1]?.trim() || null;
     return { version, date, python, sdk, updateInfo };
   })();
@@ -498,9 +500,9 @@ function Settings({
             className="input settings-select"
             value={modelProvider}
             onChange={(e) => {
-              const v = e.target.value;
-              setModelProvider(v);
-              if (v === "custom" && !modelBaseUrl) {
+              const provider = e.target.value;
+              setModelProvider(provider);
+              if (provider === "custom" && !modelBaseUrl) {
                 setModelBaseUrl("http://localhost:1234/v1");
               }
             }}

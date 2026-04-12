@@ -83,9 +83,9 @@ function Memory({ profile }: { profile?: string }): React.JSX.Element {
   const [userSaved, setUserSaved] = useState(false);
 
   const loadData = useCallback(async () => {
-    const d = await window.panAPI.readMemory(profile);
-    setData(d as MemoryData);
-    setUserContent(d.user.content);
+    const memoryData = await window.panAPI.readMemory(profile);
+    setData(memoryData as MemoryData);
+    setUserContent(memoryData.user.content);
     setLoading(false);
   }, [profile]);
 
