@@ -4,6 +4,10 @@ import { runtime, processRunner } from "./runtime/instance";
 import { buildHermesEnv } from "./installer";
 import { profileHome } from "./utils";
 
+const SKILL_COMMAND_TIMEOUT_MS = 30000;
+const SKILL_DESCRIPTION_MAX_LENGTH = 120;
+const SKILL_FRONTMATTER_READ_LENGTH = 4000;
+
 export interface InstalledSkill {
   name: string;
   category: string;
@@ -34,7 +38,10 @@ function parseSkillFrontmatter(content: string): {
     const headingMatch = content.match(/^#\s+(.+)/m);
     if (headingMatch) result.name = headingMatch[1].trim();
     const paraMatch = content.match(/^(?!#)(?!---).+/m);
-    if (paraMatch) result.description = paraMatch[0].trim().slice(0, 120);
+    if (paraMatch)
+      result.description = paraMatch[0]
+        .trim()
+        .slice(0, SKILL_DESCRIPTION_MAX_LENGTH);
     return result;
   }
 
@@ -80,7 +87,10 @@ export function listInstalledSkills(profile?: string): InstalledSkill[] {
         if (!existsSync(skillFile)) continue;
 
         try {
-          const content = readFileSync(skillFile, "utf-8").slice(0, 4000);
+          const content = readFileSync(skillFile, "utf-8").slice(
+            0,
+            SKILL_FRONTMATTER_READ_LENGTH,
+          );
           const meta = parseSkillFrontmatter(content);
 
           skills.push({
@@ -161,7 +171,7 @@ export async function searchSkills(
 ): Promise<SkillSearchResult[]> {
   const result = await runSkillsCommand(
     ["skills", "browse", "--query", query, "--json"],
-    30000,
+    SKILL_COMMAND_TIMEOUT_MS,
   );
   if (!result.success) return [];
 
@@ -211,7 +221,10 @@ export function listBundledSkills(): SkillSearchResult[] {
         if (!existsSync(skillFile)) continue;
 
         try {
-          const content = readFileSync(skillFile, "utf-8").slice(0, 4000);
+          const content = readFileSync(skillFile, "utf-8").slice(
+            0,
+            SKILL_FRONTMATTER_READ_LENGTH,
+          );
           const meta = parseSkillFrontmatter(content);
 
           skills.push({

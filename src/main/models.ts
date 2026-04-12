@@ -30,12 +30,12 @@ function writeModels(models: SavedModel[]): void {
 }
 
 function seedDefaults(): SavedModel[] {
-  const models: SavedModel[] = DEFAULT_MODELS.map((m) => ({
+  const models: SavedModel[] = DEFAULT_MODELS.map((def) => ({
     id: randomUUID(),
-    name: m.name,
-    provider: m.provider,
-    model: m.model,
-    baseUrl: m.baseUrl,
+    name: def.name,
+    provider: def.provider,
+    model: def.model,
+    baseUrl: def.baseUrl,
     createdAt: Date.now(),
   }));
   writeModels(models);
@@ -59,7 +59,7 @@ export function addModel(
 
   // Dedup: if same model ID + provider exists, return existing
   const existing = models.find(
-    (m) => m.model === model && m.provider === provider,
+    (entry) => entry.model === model && entry.provider === provider,
   );
   if (existing) return existing;
 
@@ -78,7 +78,7 @@ export function addModel(
 
 export function removeModel(id: string): boolean {
   const models = readModels();
-  const filtered = models.filter((m) => m.id !== id);
+  const filtered = models.filter((entry) => entry.id !== id);
   if (filtered.length === models.length) return false;
   writeModels(filtered);
   return true;
@@ -89,7 +89,7 @@ export function updateModel(
   fields: Partial<Pick<SavedModel, "name" | "provider" | "model" | "baseUrl">>,
 ): boolean {
   const models = readModels();
-  const idx = models.findIndex((m) => m.id === id);
+  const idx = models.findIndex((entry) => entry.id === id);
   if (idx === -1) return false;
   models[idx] = { ...models[idx], ...fields };
   writeModels(models);

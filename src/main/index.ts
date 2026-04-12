@@ -159,7 +159,9 @@ process.on("unhandledRejection", (reason) => {
   persistCrashLog("rejection", reason);
   if (mainWindow === null && app.isReady()) {
     const message =
-      reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
+      reason instanceof Error
+        ? (reason.stack ?? reason.message)
+        : String(reason);
     dialog.showErrorBox(
       "Pan Desktop failed during startup",
       formatCrashDumpHelp(message),

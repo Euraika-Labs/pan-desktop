@@ -28,11 +28,11 @@ function Install({ onComplete, onFailed }: InstallProps): React.JSX.Element {
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const cleanup = window.hermesAPI.onInstallProgress((p) => {
+    const cleanup = window.panAPI.onInstallProgress((p) => {
       setProgress(p);
     });
 
-    window.hermesAPI
+    window.panAPI
       .startInstall()
       .then((result) => {
         if (result.success) {

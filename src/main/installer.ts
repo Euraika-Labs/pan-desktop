@@ -65,6 +65,9 @@ export type { UpdateProgress } from "./runtime/runtimeUpdate";
 import type { InstallProgress } from "./runtime/runtimeInstaller";
 import type { UpdateProgress } from "./runtime/runtimeUpdate";
 
+const CLI_COMMAND_TIMEOUT_MS = 15000;
+const PROGRESS_DETAIL_MAX_LENGTH = 120;
+
 /**
  * Install instructions returned to the renderer for display in the Welcome
  * screen. Renderer never authors these strings — it fetches them from the
@@ -145,7 +148,7 @@ export async function checkInstallStatus(): Promise<InstallStatus> {
       await processRunner.run(cmd.command, [...cmd.args, "--version"], {
         cwd: runtime.hermesRepo,
         env: buildHermesEnv(),
-        timeoutMs: 15000,
+        timeoutMs: CLI_COMMAND_TIMEOUT_MS,
       });
       verified = true;
     } catch {
@@ -155,9 +158,9 @@ export async function checkInstallStatus(): Promise<InstallStatus> {
 
   // Local/custom providers don't need an API key
   try {
-    const mc = getModelConfig();
+    const modelConfig = getModelConfig();
     const localProviders = ["custom", "lmstudio", "ollama", "vllm", "llamacpp"];
-    if (localProviders.includes(mc.provider)) {
+    if (localProviders.includes(modelConfig.provider)) {
       hasApiKey = true;
     }
   } catch {
@@ -252,7 +255,7 @@ export async function runClawMigrate(
       step: 1,
       totalSteps: 1,
       title: "Migrating from OpenClaw",
-      detail: text.trim().slice(0, 120),
+      detail: text.trim().slice(0, PROGRESS_DETAIL_MAX_LENGTH),
       log,
     });
   }

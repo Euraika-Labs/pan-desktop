@@ -31,7 +31,7 @@ function Models(): React.JSX.Element {
   const [formError, setFormError] = useState("");
 
   const loadModels = useCallback(async () => {
-    const list = await window.hermesAPI.listModels();
+    const list = await window.panAPI.listModels();
     setModels(list);
     setLoading(false);
   }, []);
@@ -76,14 +76,14 @@ function Models(): React.JSX.Element {
     setFormError("");
 
     if (editingModel) {
-      await window.hermesAPI.updateModel(editingModel.id, {
+      await window.panAPI.updateModel(editingModel.id, {
         name,
         provider: formProvider,
         model,
         baseUrl: formBaseUrl.trim(),
       });
     } else {
-      await window.hermesAPI.addModel(
+      await window.panAPI.addModel(
         name,
         formProvider,
         model,
@@ -96,18 +96,18 @@ function Models(): React.JSX.Element {
   }
 
   async function handleDelete(id: string): Promise<void> {
-    await window.hermesAPI.removeModel(id);
+    await window.panAPI.removeModel(id);
     setConfirmDelete(null);
     await loadModels();
   }
 
   const filtered = models.filter((m) => {
     if (!search) return true;
-    const q = search.toLowerCase();
+    const query = search.toLowerCase();
     return (
-      m.name.toLowerCase().includes(q) ||
-      m.model.toLowerCase().includes(q) ||
-      m.provider.toLowerCase().includes(q)
+      m.name.toLowerCase().includes(query) ||
+      m.model.toLowerCase().includes(query) ||
+      m.provider.toLowerCase().includes(query)
     );
   });
 

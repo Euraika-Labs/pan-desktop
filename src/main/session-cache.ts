@@ -4,6 +4,11 @@ import { runtime, getDesktop } from "./runtime/instance";
 import { safeWriteFile } from "./utils";
 import Database from "better-sqlite3";
 
+const SESSION_TITLE_MAX_LENGTH = 50;
+const SESSION_TITLE_CHUNK_TARGET = 45;
+const SESSION_SYNC_LOOKBACK_SECONDS = 300;
+const DEFAULT_CACHED_SESSIONS_LIMIT = 50;
+
 /**
  * Session cache file — desktop-owned. Lives under `desktopPaths.sessionCache`
  * (Windows: %APPDATA%\Pan Desktop\sessions.json, macOS: ~/Library/Application
@@ -55,17 +60,17 @@ function generateTitle(message: string): string {
   if (!text) return "New conversation";
 
   // If short enough, use as-is
-  if (text.length <= 50) return text;
+  if (text.length <= SESSION_TITLE_MAX_LENGTH) return text;
 
   // Take first meaningful chunk — aim for ~40-50 chars at word boundary
   const words = text.split(" ");
   let title = "";
   for (const word of words) {
-    if ((title + " " + word).trim().length > 45) break;
+    if ((title + " " + word).trim().length > SESSION_TITLE_CHUNK_TARGET) break;
     title = (title + " " + word).trim();
   }
 
-  return title || text.slice(0, 45) + "...";
+  return title || text.slice(0, SESSION_TITLE_CHUNK_TARGET) + "...";
 }
 
 function readCache(): CacheData {
@@ -107,7 +112,9 @@ export function syncSessionCache(): CachedSession[] {
          WHERE s.started_at > ?
          ORDER BY s.started_at DESC`,
       )
-      .all(cache.lastSync > 0 ? cache.lastSync - 300 : 0) as Array<{
+      .all(
+        cache.lastSync > 0 ? cache.lastSync - SESSION_SYNC_LOOKBACK_SECONDS : 0,
+      ) as Array<{
       id: string;
       started_at: number;
       source: string;
@@ -175,7 +182,10 @@ export function syncSessionCache(): CachedSession[] {
 }
 
 // Fast read from cache only (no DB access)
-export function listCachedSessions(limit = 50, offset = 0): CachedSession[] {
+export function listCachedSessions(
+  limit = DEFAULT_CACHED_SESSIONS_LIMIT,
+  offset = 0,
+): CachedSession[] {
   const cache = readCache();
   return cache.sessions.slice(offset, offset + limit);
 }

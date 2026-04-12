@@ -22,7 +22,7 @@ interface InstallInstructions {
   manualCommand?: string;
 }
 
-interface HermesAPI {
+interface PanAPI {
   // Installation
   getInstallInstructions: () => Promise<InstallInstructions>;
   checkInstall: () => Promise<InstallStatus>;
@@ -389,6 +389,6 @@ interface HermesAPI {
 declare global {
   interface Window {
     electron: ElectronAPI;
-    hermesAPI: HermesAPI;
+    panAPI: PanAPI;
   }
 }

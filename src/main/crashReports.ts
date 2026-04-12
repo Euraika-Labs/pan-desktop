@@ -32,13 +32,13 @@ export function formatCrashDumpHelp(context: string): string {
  * surface it in an error dialog.
  */
 export function persistCrashLog(kind: string, err: unknown): string {
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const dir = getCrashDumpsPath();
-  const logPath = join(dir, `pan-desktop-${kind}-${ts}.log`);
+  const logPath = join(dir, `pan-desktop-${kind}-${timestamp}.log`);
   const body =
     `Pan Desktop crash log\n` +
     `Kind: ${kind}\n` +
-    `Timestamp: ${ts}\n` +
+    `Timestamp: ${timestamp}\n` +
     `Version: ${app.getVersion()}\n` +
     `Platform: ${process.platform} ${process.arch}\n` +
     `Electron: ${process.versions.electron}\n` +

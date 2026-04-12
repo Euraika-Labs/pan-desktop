@@ -5,12 +5,12 @@ import { profileHome, escapeRegex, safeWriteFile } from "./utils";
 
 // ── In-memory cache with TTL ─────────────────────────────
 const CACHE_TTL = 5000; // 5 seconds
-const _cache = new Map<string, { data: unknown; ts: number }>();
+const _cache = new Map<string, { data: unknown; timestamp: number }>();
 
 function getCached<T>(key: string): T | undefined {
   const entry = _cache.get(key);
   if (!entry) return undefined;
-  if (Date.now() - entry.ts > CACHE_TTL) {
+  if (Date.now() - entry.timestamp > CACHE_TTL) {
     _cache.delete(key);
     return undefined;
   }
@@ -18,7 +18,7 @@ function getCached<T>(key: string): T | undefined {
 }
 
 function setCache(key: string, data: unknown): void {
-  _cache.set(key, { data, ts: Date.now() });
+  _cache.set(key, { data, timestamp: Date.now() });
 }
 
 function invalidateCache(prefix: string): void {

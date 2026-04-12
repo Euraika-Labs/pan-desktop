@@ -7,7 +7,13 @@ import { buildHermesEnv } from "./installer";
 import { getModelConfig, readEnv } from "./config";
 import { stripAnsi } from "./utils";
 
-const API_URL = "http://127.0.0.1:8642";
+const HERMES_GATEWAY_URL = "http://127.0.0.1:8642";
+
+const HEALTH_CHECK_TIMEOUT_MS = 1500;
+const HEALTH_POLL_INTERVAL_MS = 15000;
+const GATEWAY_STARTUP_DELAY_MS = 3000;
+const PROCESS_KILL_GRACE_MS = 3000;
+const ERROR_BODY_TRUNCATE_LENGTH = 200;
 
 const LOCAL_PROVIDERS = new Set([
   "custom",
@@ -35,10 +41,14 @@ interface ChatHandle {
 
 function isApiServerReady(): Promise<boolean> {
   return new Promise((resolve) => {
-    const req = http.get(`${API_URL}/health`, { timeout: 1500 }, (res) => {
-      resolve(res.statusCode === 200);
-      res.resume();
-    });
+    const req = http.get(
+      `${HERMES_GATEWAY_URL}/health`,
+      { timeout: HEALTH_CHECK_TIMEOUT_MS },
+      (res) => {
+        resolve(res.statusCode === 200);
+        res.resume();
+      },
+    );
     req.on("error", () => resolve(false));
     req.on("timeout", () => {
       req.destroy();
@@ -91,12 +101,12 @@ export interface ChatCallbacks {
 
 function sendMessageViaApi(
   message: string,
-  cb: ChatCallbacks,
+  callbacks: ChatCallbacks,
   profile?: string,
-  _resumeSessionId?: string,
+  resumeSessionId?: string,
   history?: Array<{ role: string; content: string }>,
 ): ChatHandle {
-  const mc = getModelConfig(profile);
+  const modelConfig = getModelConfig(profile);
   const controller = new AbortController();
 
   // Build full conversation from history + current message (standard OpenAI format)
@@ -112,7 +122,7 @@ function sendMessageViaApi(
   messages.push({ role: "user", content: message });
 
   const body = JSON.stringify({
-    model: mc.model || "hermes-agent",
+    model: modelConfig.model || "hermes-agent",
     messages,
     stream: true,
   });
@@ -121,7 +131,7 @@ function sendMessageViaApi(
     "Content-Type": "application/json",
   };
 
-  let sessionId = _resumeSessionId || "";
+  let sessionId = resumeSessionId || "";
   let hasContent = false;
   let finished = false; // guard against double callbacks
   let lastError = ""; // capture embedded error messages
@@ -132,21 +142,21 @@ function sendMessageViaApi(
     if (finished) return;
     finished = true;
     if (error) {
-      cb.onError(error);
+      callbacks.onError(error);
     } else {
-      cb.onDone(sessionId || undefined);
+      callbacks.onDone(sessionId || undefined);
     }
   }
 
-  function probeRealError(): void {
+  function extractRootCauseError(): void {
     // When streaming returns empty, make a non-streaming request to surface the real error
     const probeBody = JSON.stringify({
-      model: mc.model || "hermes-agent",
+      model: modelConfig.model || "hermes-agent",
       messages: [{ role: "user", content: message }],
       stream: false,
     });
     const probeReq = http.request(
-      `${API_URL}/v1/chat/completions`,
+      `${HERMES_GATEWAY_URL}/v1/chat/completions`,
       { method: "POST", headers: { "Content-Type": "application/json" } },
       (res) => {
         let raw = "";
@@ -188,7 +198,7 @@ function sendMessageViaApi(
         finish(lastError);
       } else {
         // Streaming returned empty — probe non-streaming to get the real error
-        probeRealError();
+        extractRootCauseError();
       }
       return true; // signals done
     }
@@ -205,8 +215,8 @@ function sendMessageViaApi(
       const delta = choice?.delta;
 
       // Extract usage from final chunk
-      if (parsed.usage && cb.onUsage) {
-        cb.onUsage({
+      if (parsed.usage && callbacks.onUsage) {
+        callbacks.onUsage({
           promptTokens: parsed.usage.prompt_tokens || 0,
           completionTokens: parsed.usage.completion_tokens || 0,
           totalTokens: parsed.usage.total_tokens || 0,
@@ -217,11 +227,11 @@ function sendMessageViaApi(
         const content = delta.content.trim();
         // Detect tool progress lines: `🔍 search_web`
         const match = toolProgressRe.exec(content);
-        if (match && cb.onToolProgress) {
-          cb.onToolProgress(`${match[1]} ${match[2]}`);
+        if (match && callbacks.onToolProgress) {
+          callbacks.onToolProgress(`${match[1]} ${match[2]}`);
         } else {
           hasContent = true;
-          cb.onChunk(delta.content);
+          callbacks.onChunk(delta.content);
         }
       }
     } catch {
@@ -231,7 +241,7 @@ function sendMessageViaApi(
   }
 
   const req = http.request(
-    `${API_URL}/v1/chat/completions`,
+    `${HERMES_GATEWAY_URL}/v1/chat/completions`,
     {
       method: "POST",
       headers,
@@ -252,7 +262,7 @@ function sendMessageViaApi(
             finish(err.error?.message || `API error ${res.statusCode}`);
           } catch {
             finish(
-              `API server returned ${res.statusCode}: ${errBody.slice(0, 200)}`,
+              `API server returned ${res.statusCode}: ${errBody.slice(0, ERROR_BODY_TRUNCATE_LENGTH)}`,
             );
           }
         });
@@ -283,7 +293,7 @@ function sendMessageViaApi(
         }
         // Signal completion — even when no content was received
         if (!hasContent && !lastError) {
-          probeRealError();
+          extractRootCauseError();
           return;
         }
         finish(hasContent ? undefined : lastError);
@@ -316,11 +326,11 @@ const NOISE_PATTERNS = [/^[╭╰│╮╯─┌┐└┘┤├┬┴┼]/, /⚕
 
 function sendMessageViaCli(
   message: string,
-  cb: ChatCallbacks,
+  callbacks: ChatCallbacks,
   profile?: string,
   resumeSessionId?: string,
 ): ChatHandle {
-  const mc = getModelConfig(profile);
+  const modelConfig = getModelConfig(profile);
   const profileEnv = readEnv(profile);
 
   const cmd = runtime.buildCliCmd();
@@ -334,8 +344,8 @@ function sendMessageViaCli(
     args.push("--resume", resumeSessionId);
   }
 
-  if (mc.model) {
-    args.push("-m", mc.model);
+  if (modelConfig.model) {
+    args.push("-m", modelConfig.model);
   }
 
   // buildHermesEnv returns NodeJS.ProcessEnv which has `string | undefined`
@@ -376,15 +386,15 @@ function sendMessageViaCli(
     }
   }
 
-  const isCustomEndpoint = LOCAL_PROVIDERS.has(mc.provider);
-  if (isCustomEndpoint && mc.baseUrl) {
+  const isCustomEndpoint = LOCAL_PROVIDERS.has(modelConfig.provider);
+  if (isCustomEndpoint && modelConfig.baseUrl) {
     env.HERMES_INFERENCE_PROVIDER = "custom";
-    env.OPENAI_BASE_URL = mc.baseUrl.replace(/\/+$/, "");
+    env.OPENAI_BASE_URL = modelConfig.baseUrl.replace(/\/+$/, "");
 
     // Resolve the right API key: check URL-specific key first, then OPENAI_API_KEY
     let resolvedKey = "";
     for (const { pattern, envKey } of URL_KEY_MAP) {
-      if (pattern.test(mc.baseUrl)) {
+      if (pattern.test(modelConfig.baseUrl)) {
         resolvedKey = profileEnv[envKey] || env[envKey] || "";
         break;
       }
@@ -393,7 +403,7 @@ function sendMessageViaCli(
       resolvedKey = profileEnv.OPENAI_API_KEY || env.OPENAI_API_KEY || "";
     }
     // Local servers (localhost/127.0.0.1) don't need a real key
-    if (!resolvedKey && /localhost|127\.0\.0\.1/i.test(mc.baseUrl)) {
+    if (!resolvedKey && /localhost|127\.0\.0\.1/i.test(modelConfig.baseUrl)) {
       resolvedKey = "no-key-required";
     }
     env.OPENAI_API_KEY = resolvedKey || "no-key-required";
@@ -431,7 +441,7 @@ function sendMessageViaCli(
       const output = result.join("\n");
       if (output) {
         hasOutput = true;
-        cb.onChunk(output);
+        callbacks.onChunk(output);
       }
     },
     onStderr: (raw) => {
@@ -450,7 +460,7 @@ function sendMessageViaCli(
         )
       ) {
         hasOutput = true;
-        cb.onChunk(text);
+        callbacks.onChunk(text);
       } else {
         // Buffer other stderr for reporting on non-zero exit
         stderrBuffer += text;
@@ -460,10 +470,10 @@ function sendMessageViaCli(
 
   proc.on("close", (code) => {
     if (code === 0 || hasOutput) {
-      cb.onDone(capturedSessionId || undefined);
+      callbacks.onDone(capturedSessionId || undefined);
     } else {
       const detail = stderrBuffer.trim();
-      cb.onError(
+      callbacks.onError(
         detail
           ? `Hermes exited with code ${code}: ${detail}`
           : `Hermes exited with code ${code}. Check your model configuration and API key.`,
@@ -472,16 +482,18 @@ function sendMessageViaCli(
   });
 
   proc.on("error", (err) => {
-    cb.onError(err.message);
+    callbacks.onError(err.message);
   });
 
   return {
     abort: () => {
       // processRunner.killTree walks the whole tree with a grace period
       // before escalating to SIGKILL. Fire-and-forget — we don't await.
-      processRunner.killTree(proc, { graceMs: 3000 }).catch(() => {
-        /* already gone or uninterruptible — nothing useful to log */
-      });
+      processRunner
+        .killTree(proc, { graceMs: PROCESS_KILL_GRACE_MS })
+        .catch(() => {
+          /* already gone or uninterruptible — nothing useful to log */
+        });
     },
   };
 }
@@ -494,7 +506,7 @@ let apiServerAvailable: boolean | null = null; // cached after first check
 
 export async function sendMessage(
   message: string,
-  cb: ChatCallbacks,
+  callbacks: ChatCallbacks,
   profile?: string,
   resumeSessionId?: string,
   history?: Array<{ role: string; content: string }>,
@@ -506,11 +518,17 @@ export async function sendMessage(
   }
 
   if (apiServerAvailable) {
-    return sendMessageViaApi(message, cb, profile, resumeSessionId, history);
+    return sendMessageViaApi(
+      message,
+      callbacks,
+      profile,
+      resumeSessionId,
+      history,
+    );
   }
 
   // Fallback to CLI
-  return sendMessageViaCli(message, cb, profile, resumeSessionId);
+  return sendMessageViaCli(message, callbacks, profile, resumeSessionId);
 }
 
 // Lazy init — called on first sendMessage or gateway start
@@ -533,7 +551,7 @@ function startHealthPolling(): void {
       clearInterval(_healthCheckInterval);
       _healthCheckInterval = null;
     }
-  }, 15000);
+  }, HEALTH_POLL_INTERVAL_MS);
 }
 
 export function stopHealthPolling(): void {
@@ -600,7 +618,7 @@ export function startGateway(profile?: string): boolean {
   // Wait a bit then check if API server came up
   setTimeout(async () => {
     apiServerAvailable = await isApiServerReady();
-  }, 3000);
+  }, GATEWAY_STARTUP_DELAY_MS);
 
   return true;
 }
@@ -626,18 +644,22 @@ export function stopGateway(force = false): void {
   if (gatewayProcess && !gatewayProcess.killed) {
     // processRunner.killTree terminates the gateway + any spawned children
     // (e.g. subagents) cross-platform. Fire-and-forget; ignore errors.
-    processRunner.killTree(gatewayProcess, { graceMs: 3000 }).catch(() => {
-      /* already gone */
-    });
+    processRunner
+      .killTree(gatewayProcess, { graceMs: PROCESS_KILL_GRACE_MS })
+      .catch(() => {
+        /* already gone */
+      });
     gatewayProcess = null;
   }
   // Also kill any detached gateway recorded in the pid file. This covers
   // the "app restarted and found a leftover daemon" case.
   const pid = readPidFile();
   if (pid) {
-    processRunner.killTree(pid, { graceMs: 3000 }).catch(() => {
-      /* already gone */
-    });
+    processRunner
+      .killTree(pid, { graceMs: PROCESS_KILL_GRACE_MS })
+      .catch(() => {
+        /* already gone */
+      });
   }
   gatewayStartedByApp = false;
   apiServerAvailable = false;

@@ -74,10 +74,10 @@ export interface DesktopPathsOptions {
 }
 
 /** Internal log hook. One-time warnings about legacy-path fallback. */
-const warnedPaths = new Set<string>();
+const _warnedPaths = new Set<string>();
 function warnOnceLegacyFallback(message: string): void {
-  if (warnedPaths.has(message)) return;
-  warnedPaths.add(message);
+  if (_warnedPaths.has(message)) return;
+  _warnedPaths.add(message);
   // Use console.warn so this shows up in main-process logs. We don't have
   // a logger yet; when one lands in Wave 4, replace this with logger.warn.
   console.warn(`[desktopPaths] ${message}`);
