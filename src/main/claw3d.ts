@@ -11,8 +11,8 @@ import type { ChildProcess } from "./platform/processRunner";
 import { buildHermesEnv } from "./installer";
 import { stripAnsi, safeWriteFile } from "./utils";
 
-const HERMES_OFFICE_REPO = "https://github.com/fathah/hermes-office";
-const HERMES_OFFICE_DIR = join(runtime.hermesHome, "hermes-office");
+const CLAW3D_REPO_URL = "https://github.com/fathah/hermes-office";
+const CLAW3D_REPO_DIR = join(runtime.hermesHome, "hermes-office");
 const DEV_PID_FILE = join(runtime.hermesHome, "claw3d-dev.pid");
 const ADAPTER_PID_FILE = join(runtime.hermesHome, "claw3d-adapter.pid");
 const PORT_FILE = join(runtime.hermesHome, "claw3d-port");
@@ -109,8 +109,8 @@ function writeClaw3dSettings(wsUrl?: string): void {
 
   // Write .env in claw3d directory
   try {
-    if (existsSync(HERMES_OFFICE_DIR)) {
-      const envPath = join(HERMES_OFFICE_DIR, ".env");
+    if (existsSync(CLAW3D_REPO_DIR)) {
+      const envPath = join(CLAW3D_REPO_DIR, ".env");
       const port = getSavedPort();
       const envContent = [
         "# Auto-configured by Pan Desktop",
@@ -208,8 +208,8 @@ function isAdapterRunning(): boolean {
 }
 
 export async function getClaw3dStatus(): Promise<Claw3dStatus> {
-  const cloned = existsSync(join(HERMES_OFFICE_DIR, "package.json"));
-  const installed = existsSync(join(HERMES_OFFICE_DIR, "node_modules"));
+  const cloned = existsSync(join(CLAW3D_REPO_DIR, "package.json"));
+  const installed = existsSync(join(CLAW3D_REPO_DIR, "node_modules"));
   const port = getSavedPort();
   const devRunning = isDevServerRunning();
   // Only check port conflict when dev server is NOT running
@@ -264,14 +264,14 @@ export async function setupClaw3d(
   const env = buildHermesEnv({ TERM: "dumb" });
 
   // Step 1: Clone (or pull if already cloned)
-  const cloned = existsSync(join(HERMES_OFFICE_DIR, "package.json"));
+  const cloned = existsSync(join(CLAW3D_REPO_DIR, "package.json"));
 
   if (!cloned) {
     emit(1, "Cloning Claw3D repository...", "Cloning from GitHub...\n");
     await new Promise<void>((resolve, reject) => {
       const proc = processRunner.spawnStreaming(
         "git",
-        ["clone", HERMES_OFFICE_REPO, HERMES_OFFICE_DIR],
+        ["clone", CLAW3D_REPO_URL, CLAW3D_REPO_DIR],
         {
           cwd: adapter.homeDir(),
           env,
@@ -302,7 +302,7 @@ export async function setupClaw3d(
     );
     await new Promise<void>((resolve) => {
       const proc = processRunner.spawnStreaming("git", ["pull", "--ff-only"], {
-        cwd: HERMES_OFFICE_DIR,
+        cwd: CLAW3D_REPO_DIR,
         env,
         onStdout: (text) => emit(1, "Updating Claw3D...", stripAnsi(text)),
         onStderr: (text) => emit(1, "Updating Claw3D...", stripAnsi(text)),
@@ -320,7 +320,7 @@ export async function setupClaw3d(
 
   await new Promise<void>((resolve, reject) => {
     const proc = processRunner.spawnStreaming(npm, ["install"], {
-      cwd: HERMES_OFFICE_DIR,
+      cwd: CLAW3D_REPO_DIR,
       env,
       onStdout: (text) =>
         emit(2, "Installing dependencies...", stripAnsi(text)),
@@ -351,7 +351,7 @@ export async function setupClaw3d(
 
 export async function startDevServer(): Promise<boolean> {
   if (isDevServerRunning()) return true;
-  if (!existsSync(join(HERMES_OFFICE_DIR, "node_modules"))) return false;
+  if (!existsSync(join(CLAW3D_REPO_DIR, "node_modules"))) return false;
 
   devServerError = "";
   devServerLogs = "";
@@ -368,7 +368,7 @@ export async function startDevServer(): Promise<boolean> {
   // docs/DEVELOPER_WORKFLOW.md §"Known warnings — Claw3D workspace root"
   // and docs/windows/CLAW3D_UPSTREAM_ISSUE_DRAFT.md.
   const proc = processRunner.spawnStreaming(npm, ["run", "dev"], {
-    cwd: HERMES_OFFICE_DIR,
+    cwd: CLAW3D_REPO_DIR,
     env: buildHermesEnv({
       TERM: "dumb",
       PORT: String(port),
@@ -432,14 +432,14 @@ export async function stopDevServer(): Promise<void> {
 
 export async function startAdapter(): Promise<boolean> {
   if (isAdapterRunning()) return true;
-  if (!existsSync(join(HERMES_OFFICE_DIR, "node_modules"))) return false;
+  if (!existsSync(join(CLAW3D_REPO_DIR, "node_modules"))) return false;
 
   adapterError = "";
   adapterLogs = "";
   const npm = await findNpm();
 
   const proc = processRunner.spawnStreaming(npm, ["run", "hermes-adapter"], {
-    cwd: HERMES_OFFICE_DIR,
+    cwd: CLAW3D_REPO_DIR,
     env: buildHermesEnv({ TERM: "dumb" }),
     detached: true,
     onStdout: (text) => {
@@ -508,7 +508,7 @@ export async function startAll(): Promise<{
   success: boolean;
   error?: string;
 }> {
-  if (!existsSync(join(HERMES_OFFICE_DIR, "node_modules"))) {
+  if (!existsSync(join(CLAW3D_REPO_DIR, "node_modules"))) {
     return {
       success: false,
       error: "Claw3D is not installed. Please install it first.",

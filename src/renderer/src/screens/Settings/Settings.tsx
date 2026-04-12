@@ -77,18 +77,18 @@ function Settings({
 
   const loadConfig = useCallback(async (): Promise<void> => {
     // Load fast config first (cached in main process)
-    const [envData, home, mc, pool, aVersion] = await Promise.all([
-      window.hermesAPI.getEnv(profile),
-      window.hermesAPI.getHermesHome(profile),
-      window.hermesAPI.getModelConfig(profile),
-      window.hermesAPI.getCredentialPool(),
-      window.hermesAPI.getAppVersion(),
+    const [envData, home, modelConfig, pool, aVersion] = await Promise.all([
+      window.panAPI.getEnv(profile),
+      window.panAPI.getHermesHome(profile),
+      window.panAPI.getModelConfig(profile),
+      window.panAPI.getCredentialPool(),
+      window.panAPI.getAppVersion(),
     ]);
     setEnv(envData);
     setHermesHome(home);
-    setModelProvider(mc.provider);
-    setModelName(mc.model);
-    setModelBaseUrl(mc.baseUrl);
+    setModelProvider(modelConfig.provider);
+    setModelName(modelConfig.model);
+    setModelBaseUrl(modelConfig.baseUrl);
     setCredPool(pool);
     setAppVersion(aVersion);
 
@@ -98,7 +98,7 @@ function Settings({
     });
 
     // Defer slow calls — background refresh, cached values show instantly
-    window.hermesAPI.getHermesVersion().then((v) => {
+    window.panAPI.getHermesVersion().then((v) => {
       setHermesVersion(v);
       if (v) {
         try {
@@ -110,7 +110,7 @@ function Settings({
     });
 
     if (localStorage.getItem("hermes-openclaw-dismissed") !== "true") {
-      window.hermesAPI.checkOpenClaw().then((claw) => {
+      window.panAPI.checkOpenClaw().then((claw) => {
         setOpenclawFound(claw.found);
         setOpenclawPath(claw.path);
         try {
@@ -131,11 +131,11 @@ function Settings({
   useEffect(() => {
     if (!visible) return;
     (async (): Promise<void> => {
-      const mc = await window.hermesAPI.getModelConfig(profile);
+      const modelConfig = await window.panAPI.getModelConfig(profile);
       modelLoaded.current = false;
-      setModelProvider(mc.provider);
-      setModelName(mc.model);
-      setModelBaseUrl(mc.baseUrl);
+      setModelProvider(modelConfig.provider);
+      setModelName(modelConfig.model);
+      setModelBaseUrl(modelConfig.baseUrl);
       requestAnimationFrame(() => {
         modelLoaded.current = true;
       });
@@ -145,7 +145,7 @@ function Settings({
   // Auto-save model config when values change (debounced)
   const saveModelConfig = useCallback(async () => {
     if (!modelLoaded.current) return;
-    await window.hermesAPI.setModelConfig(
+    await window.panAPI.setModelConfig(
       modelProvider,
       modelName,
       modelBaseUrl,
@@ -154,7 +154,7 @@ function Settings({
     // Auto-save to models library (dedup handled by backend)
     if (modelName.trim()) {
       const displayName = modelName.split("/").pop() || modelName;
-      await window.hermesAPI.addModel(
+      await window.panAPI.addModel(
         displayName,
         modelProvider,
         modelName,
@@ -178,7 +178,7 @@ function Settings({
 
   async function handleBlur(key: string): Promise<void> {
     const value = env[key] || "";
-    await window.hermesAPI.setEnv(key, value, profile);
+    await window.panAPI.setEnv(key, value, profile);
     setSavedKey(key);
     setTimeout(() => setSavedKey(null), 2000);
   }
@@ -197,7 +197,7 @@ function Settings({
         label: poolNewLabel.trim() || `Key ${existing.length + 1}`,
       },
     ];
-    await window.hermesAPI.setCredentialPool(poolProvider, entries);
+    await window.panAPI.setCredentialPool(poolProvider, entries);
     setCredPool((prev) => ({ ...prev, [poolProvider]: entries }));
     setPoolNewKey("");
     setPoolNewLabel("");
@@ -209,7 +209,7 @@ function Settings({
   ): Promise<void> {
     const entries = [...(credPool[provider] || [])];
     entries.splice(index, 1);
-    await window.hermesAPI.setCredentialPool(provider, entries);
+    await window.panAPI.setCredentialPool(provider, entries);
     setCredPool((prev) => ({ ...prev, [provider]: entries }));
   }
 
@@ -227,12 +227,12 @@ function Settings({
     setMigrationLog("");
     setMigrationResult(null);
 
-    const cleanup = window.hermesAPI.onInstallProgress((p) => {
+    const cleanup = window.panAPI.onInstallProgress((p) => {
       setMigrationLog(p.log);
     });
 
     try {
-      const result = await window.hermesAPI.runClawMigrate();
+      const result = await window.panAPI.runClawMigrate();
       cleanup();
       if (result.success) {
         setMigrationResult(
@@ -257,14 +257,14 @@ function Settings({
   async function handleDoctor(): Promise<void> {
     setDoctorRunning(true);
     setDoctorOutput(null);
-    const output = await window.hermesAPI.runHermesDoctor();
+    const output = await window.panAPI.runHermesDoctor();
     setDoctorOutput(output);
     setDoctorRunning(false);
   }
 
   // Helper to fetch fresh version, clear backend cache, and update localStorage
   function refreshVersion(): void {
-    window.hermesAPI.refreshHermesVersion().then((v) => {
+    window.panAPI.refreshHermesVersion().then((v) => {
       setHermesVersion(v);
       if (v) {
         try {
@@ -279,7 +279,7 @@ function Settings({
   async function handleUpdateHermes(): Promise<void> {
     setUpdating(true);
     setUpdateResult(null);
-    const result = await window.hermesAPI.runHermesUpdate();
+    const result = await window.panAPI.runHermesUpdate();
     setUpdating(false);
     if (result.success) {
       setUpdateResult("Updated successfully!");

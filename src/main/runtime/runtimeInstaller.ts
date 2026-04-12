@@ -512,7 +512,9 @@ class WindowsInstallerStrategy implements RuntimeInstaller {
       : join(app.getAppPath(), "resources", "overlays");
     const pinnedRef = this.readPinnedRef(overlayDirForManifest);
     if (pinnedRef) {
-      emit(`Pinning upstream Hermes Agent to commit ${pinnedRef.slice(0, 12)}\n`);
+      emit(
+        `Pinning upstream Hermes Agent to commit ${pinnedRef.slice(0, 12)}\n`,
+      );
     }
 
     // install.ps1 accepts -HermesHome, -InstallDir, and -Ref. Pan Desktop

@@ -35,7 +35,7 @@ function Setup({ onComplete }: { onComplete: () => void }): React.JSX.Element {
     setFetchError("");
     setAvailableModels([]);
     try {
-      const result = await window.hermesAPI.fetchRemoteModels(
+      const result = await window.panAPI.fetchRemoteModels(
         baseUrl.trim(),
         apiKey.trim() || null,
       );
@@ -62,7 +62,9 @@ function Setup({ onComplete }: { onComplete: () => void }): React.JSX.Element {
     }
     if (isCustomEndpoint && !baseUrl.trim()) {
       setError(
-        isLocal ? "Please enter the server URL" : "Please enter the API base URL",
+        isLocal
+          ? "Please enter the server URL"
+          : "Please enter the API base URL",
       );
       return;
     }
@@ -75,15 +77,17 @@ function Setup({ onComplete }: { onComplete: () => void }): React.JSX.Element {
       // For custom-openai the key is OPTIONAL — only set it if the user typed
       // something, so endpoints without auth still work.
       if (provider.envKey && apiKey.trim()) {
-        await window.hermesAPI.setEnv(provider.envKey, apiKey.trim());
+        await window.panAPI.setEnv(provider.envKey, apiKey.trim());
       }
 
       const configProvider = isCustomEndpoint
         ? "custom"
         : provider.configProvider;
-      const configBaseUrl = isCustomEndpoint ? baseUrl.trim() : provider.baseUrl;
+      const configBaseUrl = isCustomEndpoint
+        ? baseUrl.trim()
+        : provider.baseUrl;
       const configModel = modelName.trim() || "";
-      await window.hermesAPI.setModelConfig(
+      await window.panAPI.setModelConfig(
         configProvider,
         configModel,
         configBaseUrl,
@@ -95,12 +99,7 @@ function Setup({ onComplete }: { onComplete: () => void }): React.JSX.Element {
       if (isCustomEndpoint && availableModels.length > 0) {
         for (const id of availableModels) {
           try {
-            await window.hermesAPI.addModel(
-              id,
-              "custom",
-              id,
-              baseUrl.trim(),
-            );
+            await window.panAPI.addModel(id, "custom", id, baseUrl.trim());
           } catch {
             /* continue on failure */
           }
@@ -197,8 +196,7 @@ function Setup({ onComplete }: { onComplete: () => void }): React.JSX.Element {
             {isCustomOpenai && (
               <>
                 <label className="setup-label" style={{ marginTop: 16 }}>
-                  API Key{" "}
-                  <span className="setup-label-optional">optional</span>
+                  API Key <span className="setup-label-optional">optional</span>
                 </label>
                 <div className="setup-input-group">
                   <input
@@ -327,7 +325,7 @@ function Setup({ onComplete }: { onComplete: () => void }): React.JSX.Element {
 
             <button
               className="setup-link"
-              onClick={() => window.hermesAPI.openExternal(provider.url)}
+              onClick={() => window.panAPI.openExternal(provider.url)}
             >
               Don&apos;t have a key? Get one here
               <ExternalLink size={12} />

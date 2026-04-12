@@ -6,4 +6,5 @@
 // See docs/M1_1_TICKETS.md M1.1-#005 for the runtime integrity check
 // that consumes this constant.
 
-export const INSTALL_PS1_SHA256 = "24857348d3c7ad0e75a2dde715790a6fe0e09f03327b2cc397ef6aab9ec0adc2" as const;
+export const INSTALL_PS1_SHA256 =
+  "24857348d3c7ad0e75a2dde715790a6fe0e09f03327b2cc397ef6aab9ec0adc2" as const;

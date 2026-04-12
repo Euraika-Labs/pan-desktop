@@ -16,7 +16,7 @@ function Soul({ profile }: SoulProps): React.JSX.Element {
   const loadSoul = useCallback(async (): Promise<void> => {
     loaded.current = false;
     setLoading(true);
-    const text = await window.hermesAPI.readSoul(profile);
+    const text = await window.panAPI.readSoul(profile);
     setContent(text);
     setLoading(false);
     setTimeout(() => {
@@ -31,7 +31,7 @@ function Soul({ profile }: SoulProps): React.JSX.Element {
   const saveSoul = useCallback(
     async (text: string) => {
       if (!loaded.current) return;
-      await window.hermesAPI.writeSoul(text, profile);
+      await window.panAPI.writeSoul(text, profile);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     },
@@ -50,7 +50,7 @@ function Soul({ profile }: SoulProps): React.JSX.Element {
   }, [content, saveSoul]);
 
   async function handleReset(): Promise<void> {
-    const newContent = await window.hermesAPI.resetSoul(profile);
+    const newContent = await window.panAPI.resetSoul(profile);
     loaded.current = false;
     setContent(newContent);
     setShowReset(false);

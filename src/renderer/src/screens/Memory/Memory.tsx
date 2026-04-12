@@ -83,7 +83,7 @@ function Memory({ profile }: { profile?: string }): React.JSX.Element {
   const [userSaved, setUserSaved] = useState(false);
 
   const loadData = useCallback(async () => {
-    const d = await window.hermesAPI.readMemory(profile);
+    const d = await window.panAPI.readMemory(profile);
     setData(d as MemoryData);
     setUserContent(d.user.content);
     setLoading(false);
@@ -97,10 +97,7 @@ function Memory({ profile }: { profile?: string }): React.JSX.Element {
   async function handleAddEntry(): Promise<void> {
     if (!newEntry.trim()) return;
     setError("");
-    const result = await window.hermesAPI.addMemoryEntry(
-      newEntry.trim(),
-      profile,
-    );
+    const result = await window.panAPI.addMemoryEntry(newEntry.trim(), profile);
     if (result.success) {
       setNewEntry("");
       setShowAdd(false);
@@ -113,7 +110,7 @@ function Memory({ profile }: { profile?: string }): React.JSX.Element {
   async function handleSaveEdit(): Promise<void> {
     if (editingIndex === null) return;
     setError("");
-    const result = await window.hermesAPI.updateMemoryEntry(
+    const result = await window.panAPI.updateMemoryEntry(
       editingIndex,
       editContent.trim(),
       profile,
@@ -128,17 +125,14 @@ function Memory({ profile }: { profile?: string }): React.JSX.Element {
   }
 
   async function handleDeleteEntry(index: number): Promise<void> {
-    await window.hermesAPI.removeMemoryEntry(index, profile);
+    await window.panAPI.removeMemoryEntry(index, profile);
     setConfirmDelete(null);
     await loadData();
   }
 
   async function handleSaveUserProfile(): Promise<void> {
     setError("");
-    const result = await window.hermesAPI.writeUserProfile(
-      userContent,
-      profile,
-    );
+    const result = await window.panAPI.writeUserProfile(userContent, profile);
     if (result.success) {
       setUserEditing(false);
       setUserSaved(true);

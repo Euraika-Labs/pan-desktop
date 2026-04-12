@@ -42,14 +42,14 @@ async function countSkills(profilePath: string): Promise<number> {
   try {
     const dirs = await fs.readdir(skillsDir);
     let count = 0;
-    for (const d of dirs) {
-      const sub = join(skillsDir, d);
+    for (const dirName of dirs) {
+      const sub = join(skillsDir, dirName);
       const stat = await fs.stat(sub);
       if (stat.isDirectory()) {
         const inner = await fs.readdir(sub);
-        for (const f of inner) {
+        for (const fileName of inner) {
           try {
-            await fs.access(join(sub, f, "SKILL.md"));
+            await fs.access(join(sub, fileName, "SKILL.md"));
             count++;
           } catch {
             // not a skill
@@ -109,7 +109,7 @@ export async function listProfiles(): Promise<ProfileInfo[]> {
     defaultHasEnv,
     defaultHasSoul,
     defaultSkills,
-    defaultGw,
+    isDefaultGatewayRunning,
   ] = await Promise.all([
     readProfileConfig(runtime.hermesHome),
     fileExists(join(runtime.hermesHome, ".env")),
@@ -128,7 +128,7 @@ export async function listProfiles(): Promise<ProfileInfo[]> {
     hasEnv: defaultHasEnv,
     hasSoul: defaultHasSoul,
     skillCount: defaultSkills,
-    gatewayRunning: defaultGw,
+    gatewayRunning: isDefaultGatewayRunning,
   });
 
   // Named profiles under <hermesHome>/profiles/

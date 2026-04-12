@@ -155,9 +155,9 @@ export async function checkInstallStatus(): Promise<InstallStatus> {
 
   // Local/custom providers don't need an API key
   try {
-    const mc = getModelConfig();
+    const modelConfig = getModelConfig();
     const localProviders = ["custom", "lmstudio", "ollama", "vllm", "llamacpp"];
-    if (localProviders.includes(mc.provider)) {
+    if (localProviders.includes(modelConfig.provider)) {
       hasApiKey = true;
     }
   } catch {

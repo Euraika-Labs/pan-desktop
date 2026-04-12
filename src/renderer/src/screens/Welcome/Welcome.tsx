@@ -31,7 +31,7 @@ function Welcome({
 
   useEffect(() => {
     let cancelled = false;
-    window.hermesAPI.getInstallInstructions().then((data) => {
+    window.panAPI.getInstallInstructions().then((data) => {
       if (!cancelled) setInstructions(data);
     });
     return () => {
