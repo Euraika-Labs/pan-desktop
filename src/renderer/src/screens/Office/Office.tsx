@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Refresh, ExternalLink, Settings } from "../../assets/icons";
 
+// How often to poll getClaw3dStatus() while the Office tab is visible.
+// Keep in sync with STATUS_POLL_INTERVAL_MS in src/main/claw3d.ts.
+const STATUS_POLL_INTERVAL_MS = 5000;
+
 type OfficeState =
   | "checking"
   | "not-installed"
@@ -86,7 +90,7 @@ function Office({ visible }: { visible?: boolean }): React.JSX.Element {
         setRunning(false);
         if (status.error) setError(status.error);
       }
-    }, 5000);
+    }, STATUS_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [state, visible]);
 
@@ -252,7 +256,7 @@ function Office({ visible }: { visible?: boolean }): React.JSX.Element {
                 className="btn btn-secondary"
                 onClick={() =>
                   window.panAPI.openExternal(
-                    "https://github.com/iamlukethedev/Claw3D",
+                    "https://github.com/fathah/hermes-office",
                   )
                 }
               >
