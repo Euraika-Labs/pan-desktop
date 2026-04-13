@@ -1,8 +1,25 @@
 # Pan Desktop — Project Roadmap
 
 **Generated:** 2026-04-12
-**Current version:** 0.0.2 (develop) / 0.0.1 (latest tag)
-**Status:** M2 in progress, approval system uncommitted on WSL
+**Updated:** 2026-04-13
+**Current version:** 0.0.2 (develop, merged to main via MR !20)
+**Status:** Phases 0-6 complete. Pan-Agent Go rewrite in progress.
+
+---
+
+## Completion Summary (2026-04-13)
+
+All automatable roadmap items are complete:
+- **454 tests** (from 108), 75% line coverage
+- **Approval system** wired end-to-end (Level 1 + Level 2)
+- **11 planning docs** recovered from WSL
+- **IPC type safety** with runtime guards
+- **api_server.py overlay** created for gateway integration
+- **Changelog automation**, long-path manifest, user guide
+- **CI fixed** — EXE built on every MR (GitLab + GitHub)
+- **Pan-Agent Go rewrite started** — 15.3MB binary, 60 tests, 32 HTTP endpoints
+
+Remaining items require human testing (NSIS install, approval modal, AUMID) or external dependencies (SignPath, macOS notarization).
 
 ---
 
@@ -17,33 +34,32 @@
 | M1.1 | SHA256 integrity, Crashpad fix, auto-update via GitHub, overlay mechanism (4 patches), code signing won't-fix | Shipped |
 | M2 | Shared IPC channels (`src/shared/channels.ts`), Regolo first-class provider, Windows CLI fix (shell:true), data migration, portable build, GitLab Windows CI | Shipped to develop, not tagged |
 
-### What's built but NOT committed (WSL `/opt/projects/pan-desktop/hermes-desktop/`)
+### What's been completed since roadmap creation (2026-04-12/13)
 
-**Approval system — 581 lines, 9 files modified, 4 new files:**
-- `src/renderer/src/components/ApprovalModal.tsx` — Level 1 + Level 2 modal
-- `resources/overlays/tools/approval.py` — dangerous command detection overlay
-- `resources/overlays/gateway/platforms/pan_desktop_approval.py` — gateway approval module
-- `resources/overlays/gateway/platforms/pan_desktop_routes.py` — gateway route registration
-- Modified: `hermes.ts`, `index.ts`, `preload/index.ts`, `preload/index.d.ts`, `Chat.tsx`, `channels.ts`, `main.css`, `manifest.json`
+- ✅ Approval system recovered from WSL and committed (MR !20)
+- ✅ 11 planning docs recovered from WSL and committed
+- ✅ 346 new tests (454 total, 17 files, 75% line coverage)
+- ✅ IPC type safety with shared types + runtime guards
+- ✅ api_server.py overlay for gateway integration
+- ✅ Structured tool progress SSE events
+- ✅ Session cache auto-refresh (fs.watchFile)
+- ✅ Changelog automation (`npm run changelog`)
+- ✅ Long-path manifest (mt.exe in afterPack.js)
+- ✅ User guide (docs/USER_GUIDE.md)
+- ✅ Claw3D upstream issue draft cleaned up
+- ✅ GitLab CI fixed + EXE on every MR
+- ✅ Approval pattern tests (116 tests)
+- ✅ Delta updates verified working
 
-### What exists only in WSL workspace (never in git)
+### What still needs human interaction
 
-**11 planning docs** at `/opt/projects/pan-desktop/docs/`:
-`ARCHITECTURE_OVERVIEW.md`, `DECISIONS_M1.md`, `DECISION_LOG.md`, `DEVELOPER_WORKFLOW.md`, `INDEX.md`, `M1_1_TICKETS.md`, `OPEN_QUESTIONS.md`, `PRODUCT_GOAL.md`, `REFACTOR_ORDER_AND_WAVES.md`, `RUNTIME_UPDATE_STRATEGY.md`, `WAVE_5_TO_9_PLAN.md`
-
-These are the project's institutional memory. They are not in the repo and would be lost if the WSL instance is destroyed.
-
-### What doesn't exist yet
-
-- Test coverage for feature code (only 8 test files covering platform/runtime)
-- api_server.py integration of approval overlays
-- Claw3D upstream issue submission (M1.1-#010)
-- AUMID verification on real Windows hardware
-- User-facing documentation (install guide, feature guide)
-- Changelog / release notes
-- Long-path manifest (mt.exe afterPack)
-- macOS notarization
-- ARM64 Windows builds
+- NSIS install test on clean Windows
+- Approval modal live testing (Parts C-E of verification checklist)
+- AUMID verification on real hardware
+- Claw3D upstream issue submission to GitHub
+- SignPath OSS follow-up (external dependency)
+- macOS notarization (if macOS users exist)
+- ARM64 Windows builds (future)
 
 ---
 
