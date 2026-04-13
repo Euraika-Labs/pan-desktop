@@ -1,4 +1,11 @@
 import { ElectronAPI } from "@electron-toolkit/preload";
+import type {
+  ChatApprovalRequest,
+  ChatUsage,
+  SetupProgress,
+  UpdateAvailableInfo,
+  UpdateDownloadProgress,
+} from "../shared/ipc-types";
 
 interface InstallStatus {
   installed: boolean;
@@ -7,13 +14,8 @@ interface InstallStatus {
   verified: boolean;
 }
 
-interface InstallProgress {
-  step: number;
-  totalSteps: number;
-  title: string;
-  detail: string;
-  log: string;
-}
+/** @deprecated Use SetupProgress from shared/ipc-types instead */
+type InstallProgress = SetupProgress;
 
 interface InstallInstructions {
   supported: boolean;
@@ -28,7 +30,7 @@ interface PanAPI {
   checkInstall: () => Promise<InstallStatus>;
   startInstall: () => Promise<{ success: boolean; error?: string }>;
   onInstallProgress: (
-    callback: (progress: InstallProgress) => void,
+    callback: (progress: SetupProgress) => void,
   ) => () => void;
 
   // Hermes engine info
@@ -68,14 +70,18 @@ interface PanAPI {
   onChatChunk: (callback: (chunk: string) => void) => () => void;
   onChatDone: (callback: (sessionId?: string) => void) => () => void;
   onChatToolProgress: (callback: (tool: string) => void) => () => void;
-  onChatUsage: (
-    callback: (usage: {
-      promptTokens: number;
-      completionTokens: number;
-      totalTokens: number;
-    }) => void,
-  ) => () => void;
+  onChatUsage: (callback: (usage: ChatUsage) => void) => () => void;
   onChatError: (callback: (error: string) => void) => () => void;
+
+  // Approval
+  onChatApprovalRequest: (
+    callback: (request: ChatApprovalRequest) => void,
+  ) => () => void;
+  approvalRespond: (
+    approvalId: string,
+    response: "approved" | "denied" | "preview" | "level2_approved",
+    phrase?: string,
+  ) => Promise<boolean>;
 
   // Gateway
   startGateway: () => Promise<boolean>;
@@ -313,13 +319,7 @@ interface PanAPI {
   }>;
   claw3dSetup: () => Promise<{ success: boolean; error?: string }>;
   onClaw3dSetupProgress: (
-    callback: (progress: {
-      step: number;
-      totalSteps: number;
-      title: string;
-      detail: string;
-      log: string;
-    }) => void,
+    callback: (progress: SetupProgress) => void,
   ) => () => void;
   claw3dGetPort: () => Promise<number>;
   claw3dSetPort: (port: number) => Promise<boolean>;
@@ -339,12 +339,13 @@ interface PanAPI {
   installUpdate: () => Promise<void>;
   getAppVersion: () => Promise<string>;
   onUpdateAvailable: (
-    callback: (info: { version: string; releaseNotes: string }) => void,
+    callback: (info: UpdateAvailableInfo) => void,
   ) => () => void;
   onUpdateDownloadProgress: (
-    callback: (info: { percent: number }) => void,
+    callback: (info: UpdateDownloadProgress) => void,
   ) => () => void;
   onUpdateDownloaded: (callback: () => void) => () => void;
+  onUpdateError: (callback: (error: string) => void) => () => void;
 
   // Menu events
   onMenuNewChat: (callback: () => void) => () => void;

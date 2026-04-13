@@ -26,6 +26,15 @@ const LOG_BUFFER_MAX_LENGTH = 2000;
 const PROCESS_KILL_GRACE_MS = 3000;
 
 /**
+ * How often the Office screen polls getClaw3dStatus() while the tab is
+ * visible. 5 s is a comfortable balance between responsiveness and IPC
+ * overhead. Exported so the renderer can import it instead of hardcoding
+ * the same number. If this ever needs to be user-configurable, expose it
+ * via a settings key and read it from config.ts here.
+ */
+export const STATUS_POLL_INTERVAL_MS = 5000;
+
+/**
  * Where Claw3D stores its own onboarding settings. In Wave 1 we moved this
  * off the hardcoded `~/.openclaw/claw3d` (which was the pre-rebrand path)
  * onto desktopPaths.claw3dSettings, which resolves to

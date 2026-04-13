@@ -1,6 +1,18 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { electronAPI } from "@electron-toolkit/preload";
 import {
+  isChatApprovalRequest,
+  isChatUsage,
+  isSetupProgress,
+  isUpdateAvailableInfo,
+  isUpdateDownloadProgress,
+  type ChatApprovalRequest,
+  type ChatUsage,
+  type SetupProgress,
+  type UpdateAvailableInfo,
+  type UpdateDownloadProgress,
+} from "../shared/ipc-types";
+import {
   GET_INSTALL_INSTRUCTIONS,
   CHECK_INSTALL,
   START_INSTALL,
@@ -91,8 +103,11 @@ import {
   UPDATE_AVAILABLE,
   UPDATE_DOWNLOAD_PROGRESS,
   UPDATE_DOWNLOADED,
+  UPDATE_ERROR,
   MENU_NEW_CHAT,
   MENU_SEARCH_SESSIONS,
+  CHAT_APPROVAL_REQUEST,
+  APPROVAL_RESPOND,
 } from "../shared/channels";
 
 const panAPI = {
@@ -114,27 +129,18 @@ const panAPI = {
     ipcRenderer.invoke(START_INSTALL),
 
   onInstallProgress: (
-    callback: (progress: {
-      step: number;
-      totalSteps: number;
-      title: string;
-      detail: string;
-      log: string;
-    }) => void,
+    callback: (progress: SetupProgress) => void,
   ): (() => void) => {
     const handler = (
       _event: Electron.IpcRendererEvent,
       progress: unknown,
-    ): void =>
-      callback(
-        progress as {
-          step: number;
-          totalSteps: number;
-          title: string;
-          detail: string;
-          log: string;
-        },
-      );
+    ): void => {
+      if (!isSetupProgress(progress)) {
+        console.error("[IPC] onInstallProgress: unexpected payload", progress);
+        return;
+      }
+      callback(progress);
+    };
     ipcRenderer.on(INSTALL_PROGRESS, handler);
     return () => ipcRenderer.removeListener(INSTALL_PROGRESS, handler);
   },
@@ -223,21 +229,17 @@ const panAPI = {
     return () => ipcRenderer.removeListener(CHAT_TOOL_PROGRESS, handler);
   },
 
-  onChatUsage: (
-    callback: (usage: {
-      promptTokens: number;
-      completionTokens: number;
-      totalTokens: number;
-    }) => void,
-  ): (() => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, usage: unknown): void =>
-      callback(
-        usage as {
-          promptTokens: number;
-          completionTokens: number;
-          totalTokens: number;
-        },
-      );
+  onChatUsage: (callback: (usage: ChatUsage) => void): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      usage: unknown,
+    ): void => {
+      if (!isChatUsage(usage)) {
+        console.error("[IPC] onChatUsage: unexpected payload", usage);
+        return;
+      }
+      callback(usage);
+    };
     ipcRenderer.on(CHAT_USAGE, handler);
     return () => ipcRenderer.removeListener(CHAT_USAGE, handler);
   },
@@ -248,6 +250,34 @@ const panAPI = {
     ipcRenderer.on(CHAT_ERROR, handler);
     return () => ipcRenderer.removeListener(CHAT_ERROR, handler);
   },
+
+  // Approval (dangerous command confirmation)
+  onChatApprovalRequest: (
+    callback: (request: ChatApprovalRequest) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      request: unknown,
+    ): void => {
+      if (!isChatApprovalRequest(request)) {
+        console.error(
+          "[IPC] onChatApprovalRequest: unexpected payload",
+          request,
+        );
+        return;
+      }
+      callback(request);
+    };
+    ipcRenderer.on(CHAT_APPROVAL_REQUEST, handler);
+    return () => ipcRenderer.removeListener(CHAT_APPROVAL_REQUEST, handler);
+  },
+
+  approvalRespond: (
+    approvalId: string,
+    response: "approved" | "denied" | "preview" | "level2_approved",
+    phrase?: string,
+  ): Promise<boolean> =>
+    ipcRenderer.invoke(APPROVAL_RESPOND, approvalId, response, phrase),
 
   // Gateway
   startGateway: (): Promise<boolean> => ipcRenderer.invoke(START_GATEWAY),
@@ -524,27 +554,21 @@ const panAPI = {
     ipcRenderer.invoke(CLAW3D_SETUP),
 
   onClaw3dSetupProgress: (
-    callback: (progress: {
-      step: number;
-      totalSteps: number;
-      title: string;
-      detail: string;
-      log: string;
-    }) => void,
+    callback: (progress: SetupProgress) => void,
   ): (() => void) => {
     const handler = (
       _event: Electron.IpcRendererEvent,
       progress: unknown,
-    ): void =>
-      callback(
-        progress as {
-          step: number;
-          totalSteps: number;
-          title: string;
-          detail: string;
-          log: string;
-        },
-      );
+    ): void => {
+      if (!isSetupProgress(progress)) {
+        console.error(
+          "[IPC] onClaw3dSetupProgress: unexpected payload",
+          progress,
+        );
+        return;
+      }
+      callback(progress);
+    };
     ipcRenderer.on(CLAW3D_SETUP_PROGRESS, handler);
     return () => ipcRenderer.removeListener(CLAW3D_SETUP_PROGRESS, handler);
   },
@@ -576,19 +600,38 @@ const panAPI = {
   getAppVersion: (): Promise<string> => ipcRenderer.invoke(GET_APP_VERSION),
 
   onUpdateAvailable: (
-    callback: (info: { version: string; releaseNotes: string }) => void,
+    callback: (info: UpdateAvailableInfo) => void,
   ): (() => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, info: unknown): void =>
-      callback(info as { version: string; releaseNotes: string });
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      info: unknown,
+    ): void => {
+      if (!isUpdateAvailableInfo(info)) {
+        console.error("[IPC] onUpdateAvailable: unexpected payload", info);
+        return;
+      }
+      callback(info);
+    };
     ipcRenderer.on(UPDATE_AVAILABLE, handler);
     return () => ipcRenderer.removeListener(UPDATE_AVAILABLE, handler);
   },
 
   onUpdateDownloadProgress: (
-    callback: (info: { percent: number }) => void,
+    callback: (info: UpdateDownloadProgress) => void,
   ): (() => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, info: unknown): void =>
-      callback(info as { percent: number });
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      info: unknown,
+    ): void => {
+      if (!isUpdateDownloadProgress(info)) {
+        console.error(
+          "[IPC] onUpdateDownloadProgress: unexpected payload",
+          info,
+        );
+        return;
+      }
+      callback(info);
+    };
     ipcRenderer.on(UPDATE_DOWNLOAD_PROGRESS, handler);
     return () => ipcRenderer.removeListener(UPDATE_DOWNLOAD_PROGRESS, handler);
   },
@@ -597,6 +640,13 @@ const panAPI = {
     const handler = (): void => callback();
     ipcRenderer.on(UPDATE_DOWNLOADED, handler);
     return () => ipcRenderer.removeListener(UPDATE_DOWNLOADED, handler);
+  },
+
+  onUpdateError: (callback: (error: string) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, error: string): void =>
+      callback(error);
+    ipcRenderer.on(UPDATE_ERROR, handler);
+    return () => ipcRenderer.removeListener(UPDATE_ERROR, handler);
   },
 
   // Menu events (from native menu bar)

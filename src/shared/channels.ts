@@ -142,3 +142,7 @@ export const UPDATE_ERROR = "update-error" as const;
 // ── Menu events ───────────────────────────────────────────────
 export const MENU_NEW_CHAT = "menu-new-chat" as const;
 export const MENU_SEARCH_SESSIONS = "menu-search-sessions" as const;
+
+// ── Approval (dangerous command confirmation) ────────────────
+export const CHAT_APPROVAL_REQUEST = "chat-approval-request" as const;
+export const APPROVAL_RESPOND = "approval-respond" as const;

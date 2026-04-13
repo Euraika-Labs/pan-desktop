@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, watchFile, unwatchFile } from "fs";
 import { join } from "path";
 import { runtime, getDesktop } from "./runtime/instance";
 import { safeWriteFile } from "./utils";
@@ -197,5 +197,46 @@ export function updateSessionTitle(sessionId: string, title: string): void {
   if (idx >= 0) {
     cache.sessions[idx].title = title;
     writeCache(cache);
+  }
+}
+
+// File watcher for state.db — detects external writes (e.g. `hermes chat` from CLI)
+const WATCHER_DEBOUNCE_MS = 500;
+let watcherDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let watcherActive = false;
+
+export function startSessionWatcher(): void {
+  const dbPath = stateDbPath();
+  if (watcherActive) return;
+  watcherActive = true;
+
+  watchFile(dbPath, { persistent: false, interval: 1000 }, () => {
+    if (watcherDebounceTimer !== null) {
+      clearTimeout(watcherDebounceTimer);
+    }
+    watcherDebounceTimer = setTimeout(() => {
+      watcherDebounceTimer = null;
+      try {
+        syncSessionCache();
+      } catch (err) {
+        console.warn("[session-watcher] syncSessionCache failed:", err);
+      }
+    }, WATCHER_DEBOUNCE_MS);
+  });
+}
+
+export function stopSessionWatcher(): void {
+  if (!watcherActive) return;
+  watcherActive = false;
+
+  if (watcherDebounceTimer !== null) {
+    clearTimeout(watcherDebounceTimer);
+    watcherDebounceTimer = null;
+  }
+
+  try {
+    unwatchFile(stateDbPath());
+  } catch {
+    // non-fatal
   }
 }
